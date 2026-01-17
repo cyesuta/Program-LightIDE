@@ -1,0 +1,255 @@
+/* ============================================
+   LightIDE - File Tree Styles
+   ============================================ */
+
+.file-tree {
+    height: 100%;
+    padding: 4px 0;
+}
+
+/* File Tree Item */
+.tree-item {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    white-space: nowrap;
+}
+
+.tree-item:hover {
+    background: var(--bg-hover);
+}
+
+.tree-item.selected {
+    background: var(--bg-active);
+}
+
+.tree-item.selected:hover {
+    background: var(--bg-active);
+}
+
+/* Indentation */
+.tree-item[data-depth="0"] {
+    padding-left: 8px;
+}
+
+.tree-item[data-depth="1"] {
+    padding-left: 24px;
+}
+
+.tree-item[data-depth="2"] {
+    padding-left: 40px;
+}
+
+.tree-item[data-depth="3"] {
+    padding-left: 56px;
+}
+
+.tree-item[data-depth="4"] {
+    padding-left: 72px;
+}
+
+.tree-item[data-depth="5"] {
+    padding-left: 88px;
+}
+
+.tree-item[data-depth="6"] {
+    padding-left: 104px;
+}
+
+.tree-item[data-depth="7"] {
+    padding-left: 120px;
+}
+
+/* Expand/Collapse Arrow */
+.tree-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    font-size: 8px;
+    color: var(--text-muted);
+    transition: transform var(--transition-fast);
+}
+
+.tree-arrow.expanded {
+    transform: rotate(90deg);
+}
+
+.tree-arrow.hidden {
+    visibility: hidden;
+}
+
+/* File/Folder Icon */
+.tree-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+    font-size: 14px;
+}
+
+/* Folder icons by state */
+.tree-icon.folder::before {
+    content: '📁';
+}
+
+.tree-icon.folder.open::before {
+    content: '📂';
+}
+
+/* File icons by extension */
+.tree-icon.file-rust::before {
+    content: '🦀';
+}
+
+.tree-icon.file-js::before {
+    content: '📜';
+}
+
+.tree-icon.file-ts::before {
+    content: '📘';
+}
+
+.tree-icon.file-py::before {
+    content: '🐍';
+}
+
+.tree-icon.file-go::before {
+    content: '🔵';
+}
+
+.tree-icon.file-html::before {
+    content: '🌐';
+}
+
+.tree-icon.file-css::before {
+    content: '🎨';
+}
+
+.tree-icon.file-json::before {
+    content: '📋';
+}
+
+.tree-icon.file-config::before {
+    content: '⚙️';
+}
+
+.tree-icon.file-md::before {
+    content: '📝';
+}
+
+.tree-icon.file-image::before {
+    content: '🖼️';
+}
+
+.tree-icon.file-default::before {
+    content: '📄';
+}
+
+/* File Name */
+.tree-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.tree-item.folder>.tree-name {
+    color: var(--text-primary);
+}
+
+.tree-item.file>.tree-name {
+    color: var(--text-secondary);
+}
+
+.tree-item.selected>.tree-name {
+    color: white;
+}
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 0;
+    min-width: 160px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.context-menu-item:hover {
+    background: var(--bg-hover);
+}
+
+.context-menu-item.danger {
+    color: var(--error);
+}
+
+.context-menu-item.danger:hover {
+    background: rgba(244, 71, 71, 0.2);
+}
+
+.context-menu-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+}
+
+.context-menu-item-icon {
+    width: 16px;
+    text-align: center;
+}
+
+.context-menu-item-label {
+    flex: 1;
+}
+
+.context-menu-item-shortcut {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+/* Loading State */
+.tree-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: var(--text-muted);
+}
+
+.tree-loading::after {
+    content: '';
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 8px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1,0 +1,258 @@
+/* ============================================
+   LightIDE - Editor Styles
+   ============================================ */
+
+/* Editor Container */
+.editor-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* ============================================
+   Welcome Screen
+   ============================================ */
+.welcome-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-editor);
+}
+
+.welcome-content {
+    text-align: center;
+    max-width: 400px;
+    padding: 40px;
+}
+
+.welcome-title {
+    font-size: 36px;
+    font-weight: 300;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    letter-spacing: -1px;
+}
+
+.welcome-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 40px;
+}
+
+.shortcuts {
+    text-align: left;
+}
+
+.shortcuts h3 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.shortcut-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.shortcut-item kbd {
+    width: 80px;
+    text-align: center;
+}
+
+.shortcut-item span {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* ============================================
+   Code Editor
+   ============================================ */
+.code-editor {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+    background: var(--bg-editor);
+}
+
+/* Line Numbers */
+.line-numbers {
+    flex-shrink: 0;
+    width: 50px;
+    padding: 8px 12px 8px 0;
+    text-align: right;
+    color: var(--text-muted);
+    background: var(--bg-editor);
+    border-right: 1px solid var(--border);
+    user-select: none;
+    overflow: hidden;
+}
+
+.line-number {
+    height: 21px;
+    /* line-height * font-size */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.line-number.active {
+    color: var(--text-primary);
+}
+
+/* Code Input (Actual textarea) */
+.code-input {
+    position: absolute;
+    top: 0;
+    left: 50px;
+    right: 0;
+    bottom: 0;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: transparent;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    caret-color: white;
+    white-space: pre;
+    overflow: auto;
+    z-index: 2;
+}
+
+/* Code Highlight (Syntax highlighting overlay) */
+.code-highlight {
+    position: absolute;
+    top: 0;
+    left: 50px;
+    right: 0;
+    bottom: 0;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    color: var(--text-primary);
+    background: transparent;
+    pointer-events: none;
+    white-space: pre;
+    overflow: hidden;
+    z-index: 1;
+}
+
+/* Selection */
+.code-input::selection {
+    background: var(--accent-light);
+}
+
+/* ============================================
+   Syntax Highlighting Colors
+   ============================================ */
+.syntax-keyword {
+    color: #c586c0;
+    /* Purple */
+}
+
+.syntax-string {
+    color: #ce9178;
+    /* Orange */
+}
+
+.syntax-number {
+    color: #b5cea8;
+    /* Light green */
+}
+
+.syntax-comment {
+    color: #6a9955;
+    /* Green */
+    font-style: italic;
+}
+
+.syntax-function {
+    color: #dcdcaa;
+    /* Yellow */
+}
+
+.syntax-variable {
+    color: #9cdcfe;
+    /* Light blue */
+}
+
+.syntax-type {
+    color: #4ec9b0;
+    /* Teal */
+}
+
+.syntax-operator {
+    color: #d4d4d4;
+    /* White */
+}
+
+.syntax-punctuation {
+    color: #d4d4d4;
+    /* White */
+}
+
+.syntax-constant {
+    color: #4fc1ff;
+    /* Blue */
+}
+
+.syntax-attribute {
+    color: #9cdcfe;
+    /* Light blue */
+}
+
+/* ============================================
+   Current Line Highlight
+   ============================================ */
+.current-line {
+    background: rgba(255, 255, 255, 0.04);
+    display: block;
+    width: 100%;
+}
+
+/* ============================================
+   Minimap (Future)
+   ============================================ */
+.minimap {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 80px;
+    height: 100%;
+    background: var(--bg-secondary);
+    opacity: 0.6;
+    pointer-events: none;
+    display: none;
+    /* Hidden for MVP */
+}
+
+/* ============================================
+   Search/Replace (Future)
+   ============================================ */
+.search-widget {
+    position: absolute;
+    top: 0;
+    right: 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    display: none;
+    /* Hidden for MVP */
+    z-index: 100;
+}

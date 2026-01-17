@@ -1,0 +1,13 @@
+{
+  "name": "lightide",
+  "version": "0.1.0",
+  "description": "Lightweight code editor built with Rust + Tauri",
+  "scripts": {
+    "setup": "node scripts/setup.js",
+    "icons": "node scripts/generate-icons.js"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5",
+    "to-ico": "^1.1.5"
+  }
+}

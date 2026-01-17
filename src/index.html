@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LightIDE</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="stylesheet" href="styles/editor.css">
+    <link rel="stylesheet" href="styles/file-tree.css">
+    <link rel="stylesheet" href="styles/terminal.css">
+    <!-- xterm.js -->
+    <link rel="stylesheet" href="assets/xterm.css">
+</head>
+
+<body>
+    <!-- Title Bar -->
+    <header class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-left">
+            <span class="app-icon">📝</span>
+            <span class="app-title">LightIDE</span>
+            <span class="project-name" id="projectName"></span>
+        </div>
+        <div class="titlebar-center">
+            <!-- Tabs will be inserted here -->
+            <div class="tabs" id="tabContainer"></div>
+        </div>
+        <div class="titlebar-right">
+            <button class="titlebar-btn" id="openFolderBtn" title="開啟目錄 (Ctrl+O)">
+                <span>📂</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+        <!-- Left Panel: File Tree -->
+        <aside class="panel panel-left" id="fileTreePanel">
+            <div class="panel-header">
+                <span>檔案總管</span>
+            </div>
+            <div class="panel-content">
+                <div class="file-tree" id="fileTree">
+                    <div class="empty-state">
+                        <p>📂 開啟目錄</p>
+                        <p class="hint">使用 Ctrl+O 開啟一個專案目錄</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Resize Handle -->
+        <div class="resize-handle resize-handle-left" id="leftResizeHandle"></div>
+
+        <!-- Center Panel: Editor -->
+        <section class="panel panel-center" id="editorPanel">
+            <div class="editor-container" id="editorContainer">
+                <!-- Welcome Screen -->
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-content">
+                        <h1 class="welcome-title">LightIDE</h1>
+                        <p class="welcome-subtitle">輕量、極速的程式碼編輯器</p>
+
+                        <div class="shortcuts">
+                            <h3>快速開始</h3>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl + O</kbd>
+                                <span>開啟目錄</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl + S</kbd>
+                                <span>儲存檔案</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl + `</kbd>
+                                <span>開啟終端機</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Code Editor (hidden initially) -->
+                <div class="code-editor" id="codeEditor" style="display: none;">
+                    <div class="line-numbers" id="lineNumbers"></div>
+                    <textarea class="code-input" id="codeInput" spellcheck="false"></textarea>
+                    <pre class="code-highlight" id="codeHighlight"></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- Resize Handle -->
+        <div class="resize-handle resize-handle-right" id="rightResizeHandle"></div>
+
+        <!-- Right Panel: Terminal -->
+        <aside class="panel panel-right" id="terminalPanel">
+            <div class="panel-header">
+                <span>💻 終端機</span>
+                <button class="panel-btn" id="closeTerminalBtn" title="關閉終端機">✕</button>
+            </div>
+            <div class="panel-content terminal-content">
+                <!-- xterm.js container -->
+                <div id="xtermContainer" class="xterm-container"></div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="statusbar">
+        <div class="statusbar-left">
+            <span class="status-item" id="statusFile"></span>
+            <span class="status-separator">|</span>
+            <span class="status-item" id="statusPosition">Ln 1, Col 1</span>
+        </div>
+        <div class="statusbar-right">
+            <span class="status-item" id="statusLanguage"></span>
+            <span class="status-item">UTF-8</span>
+            <span class="status-item">LF</span>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="components/state.js"></script>
+    <script src="components/file-tree.js"></script>
+    <script src="components/editor.js"></script>
+    <!-- xterm.js -->
+    <script src="assets/xterm.min.js"></script>
+    <script src="assets/xterm-addon-fit.min.js"></script>
+    <script src="components/terminal.js"></script>
+    <script src="components/statusbar.js"></script>
+    <script src="components/app.js"></script>
+</body>
+
+</html>

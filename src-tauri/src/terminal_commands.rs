@@ -1,0 +1,83 @@
+//! Terminal Tauri commands
+//!
+//! Exposes terminal functionality to the frontend
+
+use crate::terminal::{ShellType, TERMINAL_MANAGER};
+use crate::commands::CommandResult;
+use serde::{Deserialize, Serialize};
+use tauri::command;
+
+/// Terminal info returned to frontend
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalInfo {
+    pub id: String,
+    pub shell_type: String,
+}
+
+/// Create a new terminal session
+#[command]
+pub async fn create_terminal(shell: String, cwd: Option<String>) -> CommandResult<TerminalInfo> {
+    let shell_type = match shell.to_lowercase().as_str() {
+        "powershell" | "ps" => ShellType::PowerShell,
+        "cmd" => ShellType::Cmd,
+        "gitbash" | "git-bash" | "bash" => ShellType::GitBash,
+        _ => ShellType::PowerShell, // Default to PowerShell
+    };
+
+    match TERMINAL_MANAGER.create_terminal(shell_type, cwd) {
+        Ok(id) => CommandResult::ok(TerminalInfo {
+            id,
+            shell_type: shell,
+        }),
+        Err(e) => CommandResult::err(&e.to_string()),
+    }
+}
+
+/// Write input to terminal
+#[command]
+pub async fn write_terminal(id: String, input: String) -> CommandResult<()> {
+    match TERMINAL_MANAGER.write_to_terminal(&id, &input) {
+        Ok(_) => CommandResult::ok(()),
+        Err(e) => CommandResult::err(&e.to_string()),
+    }
+}
+
+/// Read output from terminal
+#[command]
+pub async fn read_terminal(id: String) -> CommandResult<String> {
+    match TERMINAL_MANAGER.read_from_terminal(&id) {
+        Ok(output) => CommandResult::ok(output),
+        Err(e) => CommandResult::err(&e.to_string()),
+    }
+}
+
+/// Resize terminal
+#[command]
+pub async fn resize_terminal(id: String, cols: u16, rows: u16) -> CommandResult<()> {
+    match TERMINAL_MANAGER.resize_terminal(&id, cols, rows) {
+        Ok(_) => CommandResult::ok(()),
+        Err(e) => CommandResult::err(&e.to_string()),
+    }
+}
+
+/// Close terminal session
+#[command]
+pub async fn close_terminal(id: String) -> CommandResult<()> {
+    match TERMINAL_MANAGER.close_terminal(&id) {
+        Ok(_) => CommandResult::ok(()),
+        Err(e) => CommandResult::err(&e.to_string()),
+    }
+}
+
+/// Check if terminal is alive
+#[command]
+pub async fn is_terminal_alive(id: String) -> CommandResult<bool> {
+    CommandResult::ok(TERMINAL_MANAGER.is_terminal_alive(&id))
+}
+
+/// List all terminals
+#[command]
+pub async fn list_terminals() -> CommandResult<Vec<String>> {
+    CommandResult::ok(TERMINAL_MANAGER.list_terminals())
+}

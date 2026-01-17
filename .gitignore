@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Rust build
+target/
+src-tauri/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build artifacts
+dist/
+*.exe
+!src-tauri/icons/*.ico
+
+# Frontend dependencies (download via npm run setup)
+src/assets/xterm*.js
+src/assets/xterm.css

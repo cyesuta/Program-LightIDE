@@ -1,0 +1,339 @@
+//! Terminal management module using portable-pty
+//!
+//! Uses portable-pty for proper PTY support on Windows (via ConPTY).
+//! Based on expert recommendations for terminal emulation.
+
+use parking_lot::Mutex;
+use portable_pty::{native_pty_system, CommandBuilder, PtySize, PtySystem};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
+use std::thread;
+
+/// Terminal shell type
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ShellType {
+    PowerShell,
+    Cmd,
+    GitBash,
+}
+
+impl ShellType {
+    pub fn executable(&self) -> &'static str {
+        match self {
+            ShellType::PowerShell => "powershell.exe",
+            ShellType::Cmd => "cmd.exe",
+            ShellType::GitBash => "C:\\Program Files\\Git\\bin\\bash.exe",
+        }
+    }
+
+    pub fn args(&self) -> Vec<&'static str> {
+        match self {
+            ShellType::PowerShell => vec!["-NoLogo", "-NoProfile"],
+            ShellType::Cmd => vec![],
+            ShellType::GitBash => vec!["--login", "-i"],
+        }
+    }
+}
+
+/// Commands that can be sent to a terminal thread
+enum TerminalCommand {
+    Write(Vec<u8>),
+    Resize(u16, u16),
+    Close,
+}
+
+/// Terminal handle for communication with the terminal thread
+pub struct TerminalHandle {
+    #[allow(dead_code)]
+    pub id: String,
+    #[allow(dead_code)]
+    pub shell_type: ShellType,
+    command_tx: Sender<TerminalCommand>,
+    output_rx: Receiver<Vec<u8>>,
+    alive: Arc<Mutex<bool>>,
+}
+
+impl TerminalHandle {
+    fn new(id: String, shell_type: ShellType, cwd: Option<String>) -> anyhow::Result<Self> {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<TerminalCommand>();
+        let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>();
+        let alive = Arc::new(Mutex::new(true));
+        let alive_clone = Arc::clone(&alive);
+
+        let shell_exe = shell_type.executable().to_string();
+        let shell_args: Vec<String> = shell_type.args().iter().map(|s| s.to_string()).collect();
+        let cwd_clone = cwd.clone();
+
+        // Spawn terminal in a dedicated thread
+        thread::spawn(move || {
+            eprintln!("[PTY Thread] Starting with: {} {:?}", shell_exe, shell_args);
+
+            // Get native PTY system (uses ConPTY on Windows)
+            let pty_system = native_pty_system();
+
+            // Create PTY with initial size
+            let pair = match pty_system.openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            }) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[PTY Thread] Failed to open PTY: {}", e);
+                    *alive_clone.lock() = false;
+                    return;
+                }
+            };
+
+            // Build command with environment variables
+            let mut cmd = CommandBuilder::new(&shell_exe);
+            for arg in &shell_args {
+                cmd.arg(arg);
+            }
+
+            // Set environment variables for proper terminal behavior
+            cmd.env("TERM", "xterm-256color");
+            cmd.env("COLORTERM", "truecolor");
+            cmd.env("FORCE_COLOR", "1");
+            cmd.env("CI", ""); // Unset CI to avoid non-interactive mode
+
+            // Set working directory
+            if let Some(ref dir) = cwd_clone {
+                if std::path::Path::new(dir).exists() {
+                    cmd.cwd(dir);
+                }
+            }
+
+            // Spawn the shell
+            let mut child = match pair.slave.spawn_command(cmd) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[PTY Thread] Failed to spawn command: {}", e);
+                    *alive_clone.lock() = false;
+                    return;
+                }
+            };
+
+            eprintln!("[PTY Thread] Shell spawned successfully");
+
+            // Get reader and writer
+            let mut reader = match pair.master.try_clone_reader() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[PTY Thread] Failed to clone reader: {}", e);
+                    *alive_clone.lock() = false;
+                    return;
+                }
+            };
+
+            let mut writer = pair.master.take_writer().unwrap();
+
+            // Output reader thread - uses raw byte read (NOT line buffered!)
+            let out_tx_clone = out_tx.clone();
+            let alive_reader = Arc::clone(&alive_clone);
+            thread::spawn(move || {
+                // Use small buffer for responsive output
+                let mut buffer = [0u8; 1024];
+                loop {
+                    if !*alive_reader.lock() {
+                        break;
+                    }
+
+                    match reader.read(&mut buffer) {
+                        Ok(0) => {
+                            eprintln!("[PTY Reader] EOF");
+                            break;
+                        }
+                        Ok(n) => {
+                            eprintln!("[PTY Reader] Read {} bytes", n);
+                            // Send raw bytes immediately - don't buffer!
+                            if out_tx_clone.send(buffer[..n].to_vec()).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[PTY Reader] Error: {}", e);
+                            break;
+                        }
+                    }
+                }
+                *alive_reader.lock() = false;
+                eprintln!("[PTY Reader] Thread exiting");
+            });
+
+            // Process commands from main thread
+            loop {
+                match cmd_rx.recv() {
+                    Ok(TerminalCommand::Write(data)) => {
+                        eprintln!("[PTY Thread] Writing {} bytes", data.len());
+                        if let Err(e) = writer.write_all(&data) {
+                            eprintln!("[PTY Thread] Write error: {}", e);
+                            break;
+                        }
+                        if let Err(e) = writer.flush() {
+                            eprintln!("[PTY Thread] Flush error: {}", e);
+                        }
+                    }
+                    Ok(TerminalCommand::Resize(cols, rows)) => {
+                        eprintln!("[PTY Thread] Resizing to {}x{}", cols, rows);
+                        let _ = pair.master.resize(PtySize {
+                            rows,
+                            cols,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        });
+                    }
+                    Ok(TerminalCommand::Close) => {
+                        eprintln!("[PTY Thread] Close requested");
+                        break;
+                    }
+                    Err(_) => {
+                        eprintln!("[PTY Thread] Command channel closed");
+                        break;
+                    }
+                }
+            }
+
+            // Cleanup
+            drop(writer);
+            let _ = child.wait();
+            *alive_clone.lock() = false;
+            eprintln!("[PTY Thread] Thread exiting");
+        });
+
+        Ok(Self {
+            id,
+            shell_type,
+            command_tx: cmd_tx,
+            output_rx: out_rx,
+            alive,
+        })
+    }
+
+    fn write(&self, input: &[u8]) -> anyhow::Result<()> {
+        self.command_tx
+            .send(TerminalCommand::Write(input.to_vec()))?;
+        Ok(())
+    }
+
+    fn read(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        while let Ok(data) = self.output_rx.try_recv() {
+            output.extend(data);
+        }
+        output
+    }
+
+    fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<()> {
+        self.command_tx
+            .send(TerminalCommand::Resize(cols, rows))?;
+        Ok(())
+    }
+
+    fn is_alive(&self) -> bool {
+        *self.alive.lock()
+    }
+
+    fn close(&self) {
+        let _ = self.command_tx.send(TerminalCommand::Close);
+    }
+}
+
+/// Terminal manager
+pub struct TerminalManager {
+    sessions: Arc<Mutex<HashMap<String, TerminalHandle>>>,
+}
+
+impl TerminalManager {
+    pub fn new() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn create_terminal(
+        &self,
+        shell_type: ShellType,
+        cwd: Option<String>,
+    ) -> anyhow::Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        eprintln!(
+            "[TerminalManager] Creating terminal {} with shell {:?}",
+            id, shell_type
+        );
+
+        let handle = TerminalHandle::new(id.clone(), shell_type, cwd)?;
+        self.sessions.lock().insert(id.clone(), handle);
+
+        eprintln!("[TerminalManager] Terminal {} created successfully", id);
+        Ok(id)
+    }
+
+    pub fn write_to_terminal(&self, id: &str, input: &str) -> anyhow::Result<()> {
+        let sessions = self.sessions.lock();
+        if let Some(handle) = sessions.get(id) {
+            handle.write(input.as_bytes())
+        } else {
+            Err(anyhow::anyhow!("Terminal not found: {}", id))
+        }
+    }
+
+    pub fn read_from_terminal(&self, id: &str) -> anyhow::Result<String> {
+        let sessions = self.sessions.lock();
+        if let Some(handle) = sessions.get(id) {
+            let bytes = handle.read();
+            // Convert to string, replacing invalid UTF-8
+            Ok(String::from_utf8_lossy(&bytes).to_string())
+        } else {
+            Err(anyhow::anyhow!("Terminal not found: {}", id))
+        }
+    }
+
+    pub fn close_terminal(&self, id: &str) -> anyhow::Result<()> {
+        let mut sessions = self.sessions.lock();
+        if let Some(handle) = sessions.remove(id) {
+            handle.close();
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Terminal not found: {}", id))
+        }
+    }
+
+    pub fn is_terminal_alive(&self, id: &str) -> bool {
+        let sessions = self.sessions.lock();
+        if let Some(handle) = sessions.get(id) {
+            handle.is_alive()
+        } else {
+            false
+        }
+    }
+
+    pub fn list_terminals(&self) -> Vec<String> {
+        self.sessions.lock().keys().cloned().collect()
+    }
+
+    #[allow(dead_code)]
+    pub fn resize_terminal(&self, id: &str, cols: u16, rows: u16) -> anyhow::Result<()> {
+        let sessions = self.sessions.lock();
+        if let Some(handle) = sessions.get(id) {
+            handle.resize(cols, rows)
+        } else {
+            Err(anyhow::anyhow!("Terminal not found: {}", id))
+        }
+    }
+}
+
+impl Default for TerminalManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+lazy_static::lazy_static! {
+    pub static ref TERMINAL_MANAGER: TerminalManager = TerminalManager::new();
+}

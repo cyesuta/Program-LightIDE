@@ -1,0 +1,202 @@
+/* ============================================
+   LightIDE - Terminal Styles
+   ============================================ */
+
+/* xterm.js container */
+.terminal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 0 !important;
+}
+
+.xterm-container {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    background: #1e1e1e;
+}
+
+.xterm-container .xterm {
+    height: 100%;
+    padding: 4px;
+}
+
+.xterm-container .xterm-viewport {
+    background: #1e1e1e !important;
+}
+
+/* Legacy terminal styles (kept for fallback) */
+.terminal {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.terminal-output {
+    flex: 1;
+    padding: 8px 12px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.terminal-line {
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.terminal-line.command {
+    color: var(--text-primary);
+}
+
+.terminal-line.error {
+    color: var(--error);
+}
+
+.terminal-line.success {
+    color: var(--success);
+}
+
+.terminal-line.info {
+    color: var(--info);
+}
+
+.terminal-line.warning {
+    color: var(--warning);
+}
+
+.terminal-input-line {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+}
+
+.terminal-prompt {
+    color: var(--success);
+    margin-right: 8px;
+    white-space: nowrap;
+}
+
+.terminal-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--text-primary);
+    caret-color: white;
+}
+
+.terminal-input::placeholder {
+    color: var(--text-muted);
+}
+
+/* ANSI Colors */
+.ansi-black {
+    color: #000000;
+}
+
+.ansi-red {
+    color: #cd3131;
+}
+
+.ansi-green {
+    color: #0dbc79;
+}
+
+.ansi-yellow {
+    color: #e5e510;
+}
+
+.ansi-blue {
+    color: #2472c8;
+}
+
+.ansi-magenta {
+    color: #bc3fbc;
+}
+
+.ansi-cyan {
+    color: #11a8cd;
+}
+
+.ansi-white {
+    color: #e5e5e5;
+}
+
+.ansi-bright-black {
+    color: #666666;
+}
+
+.ansi-bright-red {
+    color: #f14c4c;
+}
+
+.ansi-bright-green {
+    color: #23d18b;
+}
+
+.ansi-bright-yellow {
+    color: #f5f543;
+}
+
+.ansi-bright-blue {
+    color: #3b8eea;
+}
+
+.ansi-bright-magenta {
+    color: #d670d6;
+}
+
+.ansi-bright-cyan {
+    color: #29b8db;
+}
+
+.ansi-bright-white {
+    color: #ffffff;
+}
+
+.ansi-bold {
+    font-weight: bold;
+}
+
+.ansi-italic {
+    font-style: italic;
+}
+
+.ansi-underline {
+    text-decoration: underline;
+}
+
+/* Shell Selector */
+.shell-selector {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-primary);
+    font-size: 11px;
+    padding: 2px 6px;
+    margin-right: 8px;
+    cursor: pointer;
+    outline: none;
+}
+
+.shell-selector:hover {
+    background: var(--bg-hover);
+}
+
+.shell-selector:focus {
+    border-color: var(--accent);
+}
+
+.shell-selector option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
