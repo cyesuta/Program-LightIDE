@@ -23,7 +23,7 @@ class AppState {
 
         // UI state
         this.leftPanelWidth = 220;
-        this.rightPanelWidth = 300;
+        this.rightPanelWidth = 420;
         this.rightPanelVisible = true;
 
         // Event listeners

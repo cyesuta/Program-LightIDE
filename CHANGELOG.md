@@ -83,6 +83,12 @@
   - 使用 esbuild-wasm 在瀏覽器中即時編譯 React 組件
   - 使用 React 18 UMD 版本渲染預覽
   - 支援 useState, useEffect 等 React Hooks
+- ✅ 滑鼠中鍵關閉編輯器頁簽
+- ✅ 終端機寬度調整為 420px
+- ✅ **終端機快捷指令功能**
+  - 預設指令：npm dev/build、git status/pull/push、clear
+  - 支援自訂指令（支援多行指令）
+  - 指令儲存在 localStorage
 
 ### 2026-01-17
 - ✅ 添加 MIT LICENSE

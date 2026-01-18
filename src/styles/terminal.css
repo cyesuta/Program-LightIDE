@@ -352,3 +352,183 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
 }
+
+/* ============================================
+   Quick Commands Toolbar
+   ============================================ */
+.terminal-quick-commands {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.quick-commands-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+}
+
+.quick-cmd-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.quick-cmd-btn:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.quick-cmd-btn .cmd-icon {
+    font-size: 10px;
+}
+
+.quick-cmd-btn .cmd-delete {
+    display: none;
+    margin-left: 4px;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.quick-cmd-btn:hover .cmd-delete {
+    display: inline;
+}
+
+.quick-cmd-btn .cmd-delete:hover {
+    color: #ff6b6b;
+}
+
+.quick-cmd-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.quick-cmd-add:hover {
+    background: var(--accent);
+    color: white;
+    border-style: solid;
+    border-color: var(--accent);
+}
+
+/* Quick Command Modal */
+.quick-cmd-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.quick-cmd-modal-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 320px;
+    max-width: 400px;
+}
+
+.quick-cmd-modal h3 {
+    margin: 0 0 16px;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.quick-cmd-modal-field {
+    margin-bottom: 12px;
+}
+
+.quick-cmd-modal-field label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.quick-cmd-modal-field input,
+.quick-cmd-modal-field textarea {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    outline: none;
+    font-family: inherit;
+}
+
+.quick-cmd-modal-field textarea {
+    resize: vertical;
+    min-height: 60px;
+    font-family: var(--font-mono);
+}
+
+.quick-cmd-modal-field input:focus,
+.quick-cmd-modal-field textarea:focus {
+    border-color: var(--accent);
+}
+
+.quick-cmd-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.quick-cmd-modal-actions button {
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+}
+
+.quick-cmd-modal-actions .btn-cancel {
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+}
+
+.quick-cmd-modal-actions .btn-cancel:hover {
+    background: var(--bg-hover);
+}
+
+.quick-cmd-modal-actions .btn-save {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.quick-cmd-modal-actions .btn-save:hover {
+    background: #0066cc;
+}

@@ -245,6 +245,18 @@ class TerminalComponent {
         this.tabBar = null;
         this.tabContent = null;
 
+        // Quick commands - preset and custom
+        this.defaultQuickCommands = [
+            { id: 'npm-dev', label: 'npm dev', command: 'npm run dev\n', icon: '▶' },
+            { id: 'npm-build', label: 'npm build', command: 'npm run build\n', icon: '📦' },
+            { id: 'git-status', label: 'git status', command: 'git status\n', icon: '📊' },
+            { id: 'git-pull', label: 'git pull', command: 'git pull\n', icon: '⬇' },
+            { id: 'git-push', label: 'git push', command: 'git push\n', icon: '⬆' },
+            { id: 'clear', label: 'clear', command: 'cls\n', icon: '🧹' }
+        ];
+        this.customQuickCommands = this.loadCustomCommands();
+        this.quickCommandsList = null;
+
         this.init();
     }
 
@@ -260,6 +272,7 @@ class TerminalComponent {
 
         this.setupUI();
         this.setupEventListeners();
+        this.setupQuickCommands();
 
         // Create initial terminal tab after a short delay
         setTimeout(() => {
@@ -472,7 +485,178 @@ class TerminalComponent {
         }
         this.tabs.clear();
     }
+
+    // ============================================
+    // Quick Commands
+    // ============================================
+
+    loadCustomCommands() {
+        try {
+            const saved = localStorage.getItem('lightide-quick-commands');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    saveCustomCommands() {
+        try {
+            localStorage.setItem('lightide-quick-commands', JSON.stringify(this.customQuickCommands));
+        } catch (e) {
+            console.error('Failed to save quick commands:', e);
+        }
+    }
+
+    setupQuickCommands() {
+        this.quickCommandsList = document.getElementById('quickCommandsList');
+        const addBtn = document.getElementById('addQuickCmdBtn');
+
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.showAddCommandModal());
+        }
+
+        this.renderQuickCommands();
+    }
+
+    renderQuickCommands() {
+        if (!this.quickCommandsList) return;
+
+        this.quickCommandsList.innerHTML = '';
+
+        // Render all commands (preset + custom)
+        const allCommands = [...this.defaultQuickCommands, ...this.customQuickCommands];
+
+        allCommands.forEach(cmd => {
+            const btn = document.createElement('button');
+            btn.className = 'quick-cmd-btn';
+            btn.title = cmd.command.replace('\n', '');
+            btn.innerHTML = `
+                <span class="cmd-icon">${cmd.icon || '⚡'}</span>
+                <span>${cmd.label}</span>
+                ${cmd.custom ? '<span class="cmd-delete" data-id="' + cmd.id + '">✕</span>' : ''}
+            `;
+
+            btn.addEventListener('click', (e) => {
+                if (e.target.classList.contains('cmd-delete')) {
+                    e.stopPropagation();
+                    this.removeCustomCommand(e.target.dataset.id);
+                } else {
+                    this.executeCommand(cmd.command);
+                }
+            });
+
+            this.quickCommandsList.appendChild(btn);
+        });
+    }
+
+    async executeCommand(command) {
+        if (!this.activeTabId || !this.tabs.has(this.activeTabId)) {
+            console.warn('No active terminal');
+            return;
+        }
+
+        const tab = this.tabs.get(this.activeTabId);
+        if (!tab || !tab.isConnected) return;
+
+        // Split by newlines and execute each line
+        const lines = command.split('\n').filter(line => line.trim() !== '');
+
+        // Reverse order (workaround for PTY buffer ordering)
+        lines.reverse();
+
+        for (const line of lines) {
+            await tab.sendInput(line + '\n');
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+    }
+
+    showAddCommandModal() {
+        const modal = document.createElement('div');
+        modal.className = 'quick-cmd-modal';
+        modal.innerHTML = `
+            <div class="quick-cmd-modal-content">
+                <h3>新增快捷指令</h3>
+                <div class="quick-cmd-modal-field">
+                    <label>顯示名稱</label>
+                    <input type="text" id="cmdLabel" placeholder="例如: npm test">
+                </div>
+                <div class="quick-cmd-modal-field">
+                    <label>指令內容 (每行一個指令)</label>
+                    <textarea id="cmdCommand" placeholder="例如:&#10;git add .&#10;git commit -m 'update'&#10;git push" rows="4"></textarea>
+                </div>
+                <div class="quick-cmd-modal-field">
+                    <label>圖示 (可選)</label>
+                    <input type="text" id="cmdIcon" placeholder="例如: 🧪" maxlength="2">
+                </div>
+                <div class="quick-cmd-modal-actions">
+                    <button class="btn-cancel">取消</button>
+                    <button class="btn-save">新增</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const labelInput = modal.querySelector('#cmdLabel');
+        const commandInput = modal.querySelector('#cmdCommand');
+        const iconInput = modal.querySelector('#cmdIcon');
+
+        // Focus first input
+        labelInput.focus();
+
+        // Cancel button
+        modal.querySelector('.btn-cancel').addEventListener('click', () => {
+            modal.remove();
+        });
+
+        // Save button
+        modal.querySelector('.btn-save').addEventListener('click', () => {
+            const label = labelInput.value.trim();
+            const command = commandInput.value.trim();
+            const icon = iconInput.value.trim() || '⚡';
+
+            if (label && command) {
+                this.addCustomCommand(label, command, icon);
+                modal.remove();
+            }
+        });
+
+        // Close on background click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+
+        // Ctrl+Enter to save (normal Enter allows newlines in textarea)
+        commandInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                e.preventDefault();
+                modal.querySelector('.btn-save').click();
+            }
+        });
+    }
+
+    addCustomCommand(label, command, icon) {
+        const id = 'custom-' + Date.now();
+        this.customQuickCommands.push({
+            id,
+            label,
+            command: command, // Keep as-is, executeCommand handles the splitting
+            icon,
+            custom: true
+        });
+        this.saveCustomCommands();
+        this.renderQuickCommands();
+    }
+
+    removeCustomCommand(id) {
+        this.customQuickCommands = this.customQuickCommands.filter(cmd => cmd.id !== id);
+        this.saveCustomCommands();
+        this.renderQuickCommands();
+    }
 }
 
 // Initialize terminal component
 let terminal;
+

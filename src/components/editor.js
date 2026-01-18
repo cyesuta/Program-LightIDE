@@ -463,6 +463,14 @@ class EditorComponent {
                     state.setActiveDocument(tab.dataset.path);
                 }
             });
+
+            // Middle-click to close tab
+            tab.addEventListener('auxclick', (e) => {
+                if (e.button === 1) { // Middle mouse button
+                    e.preventDefault();
+                    this.closeTab(tab.dataset.path);
+                }
+            });
         });
 
         this.tabContainer.querySelectorAll('.tab-close').forEach(btn => {
