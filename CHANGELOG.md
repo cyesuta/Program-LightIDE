@@ -79,6 +79,10 @@
   - 內建 Markdown 解析器，支援標題、粗斜體、連結、圖片、代碼區塊、表格等
 - ✅ **雙向滾動同步** - 編輯區和預覽區滾動互相同步
 - ✅ 修復中英混合文字選取跑位問題
+- ✅ **新增 TSX/JSX 即時預覽功能**
+  - 使用 esbuild-wasm 在瀏覽器中即時編譯 React 組件
+  - 使用 React 18 UMD 版本渲染預覽
+  - 支援 useState, useEffect 等 React Hooks
 
 ### 2026-01-17
 - ✅ 添加 MIT LICENSE

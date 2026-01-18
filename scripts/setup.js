@@ -21,6 +21,10 @@ const DEPENDENCIES = [
     {
         name: 'xterm-addon-fit.min.js',
         url: 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js'
+    },
+    {
+        name: 'esbuild.wasm',
+        url: 'https://cdn.jsdelivr.net/npm/esbuild-wasm@0.20.0/esbuild.wasm'
     }
 ];
 

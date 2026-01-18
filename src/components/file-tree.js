@@ -218,9 +218,9 @@ class FileTreeComponent {
         const languages = {
             'rs': 'rust',
             'js': 'javascript',
-            'jsx': 'javascript',
+            'jsx': 'jsx',
             'ts': 'typescript',
-            'tsx': 'typescript',
+            'tsx': 'tsx',
             'py': 'python',
             'go': 'go',
             'html': 'html',

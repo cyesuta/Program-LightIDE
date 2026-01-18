@@ -531,7 +531,11 @@ class EditorComponent {
     // ============================================
 
     isPreviewableFile(language) {
-        return language === 'markdown' || language === 'html';
+        return ['markdown', 'html', 'tsx', 'jsx'].includes(language);
+    }
+
+    isReactFile(language) {
+        return language === 'tsx' || language === 'jsx';
     }
 
     togglePreview() {
@@ -570,6 +574,8 @@ class EditorComponent {
             this.updateMarkdownPreview(content);
         } else if (doc.language === 'html') {
             this.updateHtmlPreview(content);
+        } else if (this.isReactFile(doc.language)) {
+            this.updateTsxPreview(content, doc.path);
         }
     }
 
@@ -612,6 +618,62 @@ class EditorComponent {
 
         // Use srcdoc for better compatibility with sandbox
         this.previewFrame.srcdoc = content;
+    }
+
+    async updateTsxPreview(content, filePath) {
+        if (!this.previewFrame || !this.previewContent) return;
+
+        // Use iframe for TSX preview
+        this.previewContent.classList.remove('markdown-preview');
+        this.previewFrame.style.display = 'block';
+
+        // Remove markdown preview div if present
+        const markdownDiv = this.previewContent.querySelector('.markdown-render');
+        if (markdownDiv) {
+            markdownDiv.remove();
+        }
+
+        // Show loading state
+        this.previewFrame.srcdoc = `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1e1e1e; color: #888; font-family: sans-serif; }
+        .loading { text-align: center; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #007acc; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="loading">
+        <div class="spinner"></div>
+        <div>編譯中...</div>
+    </div>
+</body>
+</html>`;
+
+        try {
+            // Get the filename for proper loader detection
+            const filename = filePath.split(/[/\\]/).pop() || 'component.tsx';
+
+            // Compile TSX using esbuild-wasm
+            const result = await tsxCompiler.compile(content, filename);
+
+            if (result.success) {
+                // Render the compiled component
+                const html = tsxCompiler.generatePreviewHtml(result.code, content);
+                this.previewFrame.srcdoc = html;
+            } else {
+                // Show error
+                const html = tsxCompiler.generateErrorHtml(result.error, result.location);
+                this.previewFrame.srcdoc = html;
+            }
+        } catch (error) {
+            // Show initialization or other errors
+            const html = tsxCompiler.generateErrorHtml(error.message);
+            this.previewFrame.srcdoc = html;
+        }
     }
 
     // Simple Markdown parser
