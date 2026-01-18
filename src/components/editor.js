@@ -506,11 +506,8 @@ class EditorComponent {
             markdownDiv.remove();
         }
 
-        // Write HTML to iframe
-        const iframeDoc = this.previewFrame.contentDocument || this.previewFrame.contentWindow.document;
-        iframeDoc.open();
-        iframeDoc.write(content);
-        iframeDoc.close();
+        // Use srcdoc for better compatibility with sandbox
+        this.previewFrame.srcdoc = content;
     }
 
     // Simple Markdown parser
