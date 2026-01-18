@@ -12,6 +12,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 /// Terminal shell type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -199,11 +202,32 @@ impl TerminalHandle {
                 }
             }
 
-            // Cleanup
+            // Cleanup - Force kill the child process and all its descendants
             drop(writer);
+            
+            // Get the process ID if available and use taskkill to terminate the entire process tree
+            #[cfg(windows)]
+            {
+                if let Some(pid) = child.process_id() {
+                    eprintln!("[PTY Thread] Killing process tree for PID: {}", pid);
+                    // Use taskkill /T /F to forcefully terminate the process and all its children
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                        .output();
+                }
+            }
+            
+            // Also try the regular kill
+            if let Err(e) = child.kill() {
+                eprintln!("[PTY Thread] Failed to kill child: {}", e);
+            }
+            
+            // Wait for the child to fully terminate
             let _ = child.wait();
+            
             *alive_clone.lock() = false;
-            eprintln!("[PTY Thread] Thread exiting");
+            eprintln!("[PTY Thread] Thread exiting, child process terminated");
         });
 
         Ok(Self {

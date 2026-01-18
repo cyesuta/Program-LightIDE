@@ -166,10 +166,35 @@ class App {
     }
 
     setupUIEvents() {
-        // Open folder button
+        // Open folder button in titlebar
         const openFolderBtn = document.getElementById('openFolderBtn');
         if (openFolderBtn) {
             openFolderBtn.addEventListener('click', () => this.openFolderDialog());
+        }
+
+        // Welcome page buttons
+        const welcomeOpenFolder = document.getElementById('welcomeOpenFolder');
+        if (welcomeOpenFolder) {
+            welcomeOpenFolder.addEventListener('click', () => this.openFolderDialog());
+        }
+
+        const welcomeOpenTerminal = document.getElementById('welcomeOpenTerminal');
+        if (welcomeOpenTerminal) {
+            welcomeOpenTerminal.addEventListener('click', () => {
+                if (terminal) {
+                    terminal.show();
+                }
+            });
+        }
+
+        // Terminal toggle button in titlebar
+        const toggleTerminalBtn = document.getElementById('toggleTerminalBtn');
+        if (toggleTerminalBtn) {
+            toggleTerminalBtn.addEventListener('click', () => {
+                if (terminal) {
+                    terminal.toggle();
+                }
+            });
         }
     }
 }

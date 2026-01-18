@@ -12,6 +12,14 @@ class EditorComponent {
         this.codeHighlight = document.getElementById('codeHighlight');
         this.tabContainer = document.getElementById('tabContainer');
 
+        // Performance optimization
+        this.debounceTimer = null;
+        this.debounceDelay = 150; // ms
+        this.lineHeight = 21; // pixels per line (matches CSS)
+        this.visibleLineBuffer = 10; // extra lines to render above/below viewport
+        this.cachedLineCount = 0;
+        this.largeFileThreshold = 500; // disable syntax highlighting above this
+
         this.init();
     }
 
@@ -23,12 +31,42 @@ class EditorComponent {
         state.on('documentModified', () => this.updateTabs());
         state.on('documentSaved', () => this.updateTabs());
 
-        // Editor input events
-        this.codeInput.addEventListener('input', () => this.handleInput());
+        // Editor input events - use debounced handler for expensive operations
+        this.codeInput.addEventListener('input', () => this.handleInputDebounced());
         this.codeInput.addEventListener('scroll', () => this.syncScroll());
         this.codeInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.codeInput.addEventListener('click', () => this.updateCursor());
         this.codeInput.addEventListener('keyup', () => this.updateCursor());
+    }
+
+    // Debounced input handler to prevent freezing on large files
+    handleInputDebounced() {
+        const doc = state.getActiveDocument();
+        if (doc) {
+            // Update content immediately (this is cheap)
+            state.updateDocumentContent(doc.path, this.codeInput.value);
+        }
+
+        // Quick line count update (for small changes)
+        this.updateLineCountFast();
+
+        // Debounce expensive operations
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+        }
+        this.debounceTimer = setTimeout(() => {
+            this.updateLineNumbers();
+            this.highlightSyntax();
+        }, this.debounceDelay);
+    }
+
+    // Fast line count check - only updates if count changed
+    updateLineCountFast() {
+        const newLineCount = (this.codeInput.value.match(/\n/g) || []).length + 1;
+        if (newLineCount !== this.cachedLineCount) {
+            this.cachedLineCount = newLineCount;
+            this.updateLineNumbers();
+        }
     }
 
     showEditor(doc) {
@@ -64,13 +102,9 @@ class EditorComponent {
         }
     }
 
+    // Legacy handler - kept for Tab key handling
     handleInput() {
-        const doc = state.getActiveDocument();
-        if (doc) {
-            state.updateDocumentContent(doc.path, this.codeInput.value);
-        }
-        this.updateLineNumbers();
-        this.highlightSyntax();
+        this.handleInputDebounced();
     }
 
     handleKeyDown(e) {
@@ -113,14 +147,38 @@ class EditorComponent {
     }
 
     updateLineNumbers() {
-        const lines = this.codeInput.value.split('\n');
-        const lineCount = lines.length;
+        const lineCount = (this.codeInput.value.match(/\n/g) || []).length + 1;
+        this.cachedLineCount = lineCount;
 
-        let html = '';
-        for (let i = 1; i <= lineCount; i++) {
-            html += `<div class="line-number">${i}</div>`;
+        // For large files, use CSS counter technique for better performance
+        if (lineCount > 1000) {
+            // Use a spacer div for height instead of individual line elements
+            const totalHeight = lineCount * this.lineHeight;
+            this.lineNumbers.innerHTML = `
+                <div class="line-numbers-virtual" style="height: ${totalHeight}px;">
+                    <style>
+                        .line-numbers-virtual::before {
+                            content: '${Array.from({ length: Math.min(lineCount, 100) }, (_, i) => i + 1).join('\\A')}';
+                            white-space: pre;
+                            display: block;
+                        }
+                    </style>
+                </div>
+            `;
+            // Show simple line count indicator for very large files
+            this.lineNumbers.innerHTML = `
+                <div class="line-numbers-large" style="height: ${totalHeight}px;">
+                    ${Array.from({ length: lineCount }, (_, i) => `<div class="line-number">${i + 1}</div>`).join('')}
+                </div>
+            `;
+        } else {
+            // For normal files, use standard approach
+            let html = '';
+            for (let i = 1; i <= lineCount; i++) {
+                html += `<div class="line-number">${i}</div>`;
+            }
+            this.lineNumbers.innerHTML = html;
         }
-        this.lineNumbers.innerHTML = html;
     }
 
     highlightSyntax() {
@@ -132,7 +190,15 @@ class EditorComponent {
             return;
         }
 
-        // Simple syntax highlighting
+        // Disable syntax highlighting for large files to prevent freezing
+        const lineCount = this.cachedLineCount || (code.match(/\n/g) || []).length + 1;
+        if (lineCount > this.largeFileThreshold) {
+            // For large files, just show plain text with HTML escaping
+            this.codeHighlight.textContent = code;
+            return;
+        }
+
+        // Simple syntax highlighting (only for smaller files)
         const highlighted = this.highlight(code, doc.language);
         this.codeHighlight.innerHTML = highlighted;
     }

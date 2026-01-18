@@ -26,8 +26,11 @@
             <div class="tabs" id="tabContainer"></div>
         </div>
         <div class="titlebar-right">
-            <button class="titlebar-btn" id="openFolderBtn" title="開啟目錄 (Ctrl+O)">
+            <button class="titlebar-btn" id="openFolderBtn" title="開啟目錄">
                 <span>📂</span>
+            </button>
+            <button class="titlebar-btn" id="toggleTerminalBtn" title="終端機">
+                <span>💻</span>
             </button>
         </div>
     </header>
@@ -61,20 +64,16 @@
                         <h1 class="welcome-title">LightIDE</h1>
                         <p class="welcome-subtitle">輕量、極速的程式碼編輯器</p>
 
-                        <div class="shortcuts">
+                        <div class="welcome-actions">
                             <h3>快速開始</h3>
-                            <div class="shortcut-item">
-                                <kbd>Ctrl + O</kbd>
-                                <span>開啟目錄</span>
-                            </div>
-                            <div class="shortcut-item">
-                                <kbd>Ctrl + S</kbd>
-                                <span>儲存檔案</span>
-                            </div>
-                            <div class="shortcut-item">
-                                <kbd>Ctrl + `</kbd>
-                                <span>開啟終端機</span>
-                            </div>
+                            <button class="welcome-btn" id="welcomeOpenFolder">
+                                <span class="btn-icon">📂</span>
+                                <span class="btn-text">開啟目錄</span>
+                            </button>
+                            <button class="welcome-btn" id="welcomeOpenTerminal">
+                                <span class="btn-icon">💻</span>
+                                <span class="btn-text">開啟終端機</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -94,12 +93,11 @@
         <!-- Right Panel: Terminal -->
         <aside class="panel panel-right" id="terminalPanel">
             <div class="panel-header">
-                <span>💻 終端機</span>
-                <button class="panel-btn" id="closeTerminalBtn" title="關閉終端機">✕</button>
+                <span>終端機</span>
+                <button class="panel-btn" id="closeTerminalBtn" title="關閉面板">✕</button>
             </div>
             <div class="panel-content terminal-content">
-                <!-- xterm.js container -->
-                <div id="xtermContainer" class="xterm-container"></div>
+                <!-- Tab bar and terminals will be created by terminal.js -->
             </div>
         </aside>
     </main>

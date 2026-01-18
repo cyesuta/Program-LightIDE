@@ -80,7 +80,7 @@ cargo build --release
 ### 前置需求
 
 - [Rust](https://www.rust-lang.org/) 1.70+
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 18+ (僅開發時需要，用於下載依賴)
 - Windows 10/11
 
 ### 專案結構

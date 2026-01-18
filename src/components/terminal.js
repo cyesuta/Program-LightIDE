@@ -1,52 +1,29 @@
 /**
  * LightIDE - Terminal Component with xterm.js
- * Professional terminal emulation using xterm.js
+ * Multi-tab terminal emulation using xterm.js
  */
 
-class TerminalComponent {
-    constructor() {
-        this.xtermContainer = document.getElementById('xtermContainer');
-        this.panel = document.getElementById('terminalPanel');
-        this.closeBtn = document.getElementById('closeTerminalBtn');
-
+class TerminalTab {
+    constructor(id, shellType, cwd) {
+        this.id = id;
+        this.shellType = shellType;
+        this.cwd = cwd;
         this.term = null;
         this.fitAddon = null;
         this.terminalId = null;
-        this.shellType = 'powershell';
         this.isConnected = false;
         this.readIntervalId = null;
-
-        this.init();
+        this.container = null;
     }
 
-    init() {
-        console.log('Terminal component initializing with xterm.js...');
+    async init(parentContainer) {
+        // Create container for this terminal
+        this.container = document.createElement('div');
+        this.container.className = 'xterm-tab-content';
+        this.container.id = `xterm-${this.id}`;
+        this.container.style.display = 'none';
+        parentContainer.appendChild(this.container);
 
-        // Wait for xterm.js to load
-        if (typeof Terminal === 'undefined') {
-            console.error('xterm.js not loaded yet, retrying...');
-            setTimeout(() => this.init(), 100);
-            return;
-        }
-
-        // Initialize xterm.js
-        this.initXterm();
-
-        // Add shell selector to header
-        this.addShellSelector();
-
-        // Close button
-        if (this.closeBtn) {
-            this.closeBtn.addEventListener('click', () => this.toggle());
-        }
-
-        // Start terminal after a short delay
-        setTimeout(() => {
-            this.startTerminal();
-        }, 500);
-    }
-
-    initXterm() {
         // Create terminal instance
         this.term = new Terminal({
             cursorBlink: true,
@@ -87,45 +64,36 @@ class TerminalComponent {
             this.term.loadAddon(this.fitAddon);
         }
 
-        if (typeof WebLinksAddon !== 'undefined') {
-            const webLinksAddon = new WebLinksAddon.WebLinksAddon();
-            this.term.loadAddon(webLinksAddon);
-        }
-
         // Open terminal in container
-        this.term.open(this.xtermContainer);
-
-        // Fit terminal to container
-        if (this.fitAddon) {
-            setTimeout(() => {
-                this.fitAddon.fit();
-            }, 100);
-        }
+        this.term.open(this.container);
 
         // Handle terminal input
         this.term.onData((data) => {
             this.sendInput(data);
         });
 
-        // Handle resize
-        window.addEventListener('resize', () => {
-            this.fit();
-        });
+        // Start the shell
+        await this.startTerminal();
+    }
 
-        // Observe container size changes
-        const resizeObserver = new ResizeObserver(() => {
+    show() {
+        if (this.container) {
+            this.container.style.display = 'flex';
             this.fit();
-        });
-        resizeObserver.observe(this.xtermContainer);
+            this.term?.focus();
+        }
+    }
 
-        console.log('xterm.js initialized successfully');
+    hide() {
+        if (this.container) {
+            this.container.style.display = 'none';
+        }
     }
 
     fit() {
         if (this.fitAddon && this.term) {
             try {
                 this.fitAddon.fit();
-                // Notify backend of size change
                 if (this.terminalId && this.isConnected) {
                     const dims = { cols: this.term.cols, rows: this.term.rows };
                     this.resizeTerminal(dims.cols, dims.rows);
@@ -136,50 +104,11 @@ class TerminalComponent {
         }
     }
 
-    addShellSelector() {
-        const header = this.panel?.querySelector('.panel-header');
-        if (!header) {
-            console.warn('Terminal header not found');
-            return;
-        }
-
-        // Check if already added
-        if (header.querySelector('.shell-selector')) return;
-
-        // Create shell selector
-        const selector = document.createElement('select');
-        selector.className = 'shell-selector';
-        selector.innerHTML = `
-            <option value="powershell">PowerShell</option>
-            <option value="cmd">CMD</option>
-            <option value="gitbash">Git Bash</option>
-        `;
-        selector.value = this.shellType;
-
-        selector.addEventListener('change', async (e) => {
-            this.shellType = e.target.value;
-            await this.restartTerminal();
-        });
-
-        // Insert before close button
-        header.insertBefore(selector, this.closeBtn);
-
-        // Add new terminal button
-        const newBtn = document.createElement('button');
-        newBtn.className = 'panel-btn';
-        newBtn.title = '重新啟動終端機';
-        newBtn.innerHTML = '↻';
-        newBtn.addEventListener('click', () => this.restartTerminal());
-        header.insertBefore(newBtn, selector);
-    }
-
     async startTerminal() {
-        console.log('=== Starting terminal ===');
+        console.log(`[Tab ${this.id}] Starting terminal with ${this.shellType}`);
 
-        // Stop any existing reading
         this.stopReading();
 
-        // Check if Tauri is available
         if (!window.__TAURI__ || !window.__TAURI__.core) {
             console.error('Tauri not available');
             this.term.writeln('\x1b[31m✗ Tauri API 不可用\x1b[0m');
@@ -187,19 +116,13 @@ class TerminalComponent {
         }
 
         try {
-            // Clear terminal and show status
             this.term.clear();
             this.term.writeln(`\x1b[36m正在啟動 ${this.shellType.toUpperCase()}...\x1b[0m`);
 
-            const cwd = state?.projectPath || null;
-            console.log('Creating terminal with shell:', this.shellType, 'cwd:', cwd);
-
             const result = await window.__TAURI__.core.invoke('create_terminal', {
                 shell: this.shellType,
-                cwd: cwd
+                cwd: this.cwd
             });
-
-            console.log('create_terminal result:', result);
 
             if (result.success) {
                 this.terminalId = result.data.id;
@@ -207,21 +130,11 @@ class TerminalComponent {
                 this.term.writeln(`\x1b[32m✓ 終端機已連接 (${this.shellType})\x1b[0m`);
                 this.term.writeln('');
 
-                console.log('Terminal connected, ID:', this.terminalId);
-
-                // Fit and notify backend of size
                 this.fit();
-
-                // Start reading with a small delay
-                setTimeout(() => {
-                    this.startReading();
-                }, 200);
-
-                // Focus terminal
+                setTimeout(() => this.startReading(), 200);
                 this.term.focus();
             } else {
                 this.term.writeln(`\x1b[31m✗ 錯誤: ${result.error}\x1b[0m`);
-                console.error('Terminal creation failed:', result.error);
             }
         } catch (error) {
             console.error('Failed to start terminal:', error);
@@ -229,45 +142,18 @@ class TerminalComponent {
         }
     }
 
-    async restartTerminal() {
-        console.log('=== Restarting terminal ===');
-
-        // Stop reading first
-        this.stopReading();
-
-        // Close existing terminal
-        if (this.terminalId) {
-            try {
-                await window.__TAURI__.core.invoke('close_terminal', { id: this.terminalId });
-            } catch (e) {
-                console.warn('Error closing terminal:', e);
-            }
-            this.terminalId = null;
-            this.isConnected = false;
-        }
-
-        // Start new terminal
-        await this.startTerminal();
-    }
-
     startReading() {
-        console.log('=== Starting reading loop ===');
-
         if (this.readIntervalId) {
             clearInterval(this.readIntervalId);
             this.readIntervalId = null;
         }
 
-        if (!this.terminalId || !this.isConnected) {
-            console.warn('Cannot start reading: not connected');
-            return;
-        }
+        if (!this.terminalId || !this.isConnected) return;
 
         const terminalId = this.terminalId;
 
         this.readIntervalId = setInterval(async () => {
             if (this.terminalId !== terminalId || !this.isConnected) {
-                console.log('Terminal changed, stopping read loop');
                 clearInterval(this.readIntervalId);
                 this.readIntervalId = null;
                 return;
@@ -279,44 +165,29 @@ class TerminalComponent {
                 });
 
                 if (result.success && result.data && result.data.length > 0) {
-                    // Write raw output to xterm - it handles ANSI codes!
                     this.term.write(result.data);
-                }
-
-                if (!result.success) {
-                    console.error('read_terminal failed:', result.error);
                 }
             } catch (error) {
                 console.error('Error reading terminal:', error);
             }
-        }, 50); // Read more frequently for smoother output
-
-        console.log('Read interval started');
+        }, 50);
     }
 
     stopReading() {
         if (this.readIntervalId) {
-            console.log('Stopping read interval');
             clearInterval(this.readIntervalId);
             this.readIntervalId = null;
         }
     }
 
     async sendInput(data) {
-        if (!this.terminalId || !this.isConnected) {
-            console.error('Cannot send input: terminal not connected');
-            return;
-        }
+        if (!this.terminalId || !this.isConnected) return;
 
         try {
-            const result = await window.__TAURI__.core.invoke('write_terminal', {
+            await window.__TAURI__.core.invoke('write_terminal', {
                 id: this.terminalId,
                 input: data
             });
-
-            if (!result.success) {
-                console.error('write_terminal failed:', result.error);
-            }
         } catch (error) {
             console.error('Error writing to terminal:', error);
         }
@@ -332,7 +203,231 @@ class TerminalComponent {
                 rows: rows
             });
         } catch (error) {
-            // Resize may not be implemented, ignore
+            // Resize may not be implemented
+        }
+    }
+
+    async destroy() {
+        console.log(`[Tab ${this.id}] Destroying terminal`);
+        this.stopReading();
+
+        if (this.terminalId) {
+            try {
+                await window.__TAURI__.core.invoke('close_terminal', { id: this.terminalId });
+            } catch (e) {
+                console.warn('Error closing terminal:', e);
+            }
+            this.terminalId = null;
+        }
+
+        if (this.term) {
+            this.term.dispose();
+            this.term = null;
+        }
+
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
+
+        this.isConnected = false;
+    }
+}
+
+class TerminalComponent {
+    constructor() {
+        this.panel = document.getElementById('terminalPanel');
+        this.closeBtn = document.getElementById('closeTerminalBtn');
+
+        this.tabs = new Map(); // Map<tabId, TerminalTab>
+        this.activeTabId = null;
+        this.tabIdCounter = 0;
+
+        this.tabBar = null;
+        this.tabContent = null;
+
+        this.init();
+    }
+
+    init() {
+        console.log('Terminal component initializing...');
+
+        // Wait for xterm.js to load
+        if (typeof Terminal === 'undefined') {
+            console.error('xterm.js not loaded yet, retrying...');
+            setTimeout(() => this.init(), 100);
+            return;
+        }
+
+        this.setupUI();
+        this.setupEventListeners();
+
+        // Create initial terminal tab after a short delay
+        setTimeout(() => {
+            this.createTab('powershell');
+        }, 500);
+    }
+
+    setupUI() {
+        const terminalContent = this.panel?.querySelector('.terminal-content');
+        if (!terminalContent) return;
+
+        // Clear existing content
+        terminalContent.innerHTML = '';
+
+        // Create tab bar
+        this.tabBar = document.createElement('div');
+        this.tabBar.className = 'terminal-tab-bar';
+        this.tabBar.innerHTML = `
+            <div class="terminal-tabs" id="terminalTabs"></div>
+            <div class="terminal-tab-actions">
+                <select class="shell-selector-new" id="newTabShellSelector">
+                    <option value="powershell">PowerShell</option>
+                    <option value="cmd">CMD</option>
+                    <option value="gitbash">Git Bash</option>
+                </select>
+                <button class="tab-add-btn" id="addTabBtn" title="新增終端機">+</button>
+            </div>
+        `;
+        terminalContent.appendChild(this.tabBar);
+
+        // Create content container for terminals
+        this.tabContent = document.createElement('div');
+        this.tabContent.className = 'terminal-tab-content-wrapper';
+        this.tabContent.id = 'terminalTabContent';
+        terminalContent.appendChild(this.tabContent);
+    }
+
+    setupEventListeners() {
+        // Close button
+        if (this.closeBtn) {
+            this.closeBtn.addEventListener('click', () => this.toggle());
+        }
+
+        // Add tab button
+        const addBtn = document.getElementById('addTabBtn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => {
+                const selector = document.getElementById('newTabShellSelector');
+                const shellType = selector?.value || 'powershell';
+                this.createTab(shellType);
+            });
+        }
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            this.fitActiveTab();
+        });
+
+        // Observe container size changes
+        if (this.tabContent) {
+            const resizeObserver = new ResizeObserver(() => {
+                this.fitActiveTab();
+            });
+            resizeObserver.observe(this.tabContent);
+        }
+    }
+
+    async createTab(shellType) {
+        const tabId = `tab-${++this.tabIdCounter}`;
+        const cwd = state?.projectPath || null;
+
+        console.log(`Creating terminal tab: ${tabId} with shell: ${shellType}`);
+
+        // Create tab object
+        const tab = new TerminalTab(tabId, shellType, cwd);
+        this.tabs.set(tabId, tab);
+
+        // Create tab button in tab bar
+        this.addTabButton(tabId, shellType);
+
+        // Initialize the terminal
+        await tab.init(this.tabContent);
+
+        // Switch to the new tab
+        this.switchTab(tabId);
+    }
+
+    addTabButton(tabId, shellType) {
+        const tabsContainer = document.getElementById('terminalTabs');
+        if (!tabsContainer) return;
+
+        const shellNames = {
+            'powershell': 'PS',
+            'cmd': 'CMD',
+            'gitbash': 'Bash'
+        };
+
+        const tabBtn = document.createElement('div');
+        tabBtn.className = 'terminal-tab';
+        tabBtn.id = `btn-${tabId}`;
+        tabBtn.innerHTML = `
+            <span class="tab-label">${shellNames[shellType] || shellType} ${this.tabIdCounter}</span>
+            <button class="tab-close-btn" data-tab="${tabId}" title="關閉">×</button>
+        `;
+
+        // Click to switch
+        tabBtn.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('tab-close-btn')) {
+                this.switchTab(tabId);
+            }
+        });
+
+        // Close button
+        const closeBtn = tabBtn.querySelector('.tab-close-btn');
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeTab(tabId);
+        });
+
+        tabsContainer.appendChild(tabBtn);
+    }
+
+    switchTab(tabId) {
+        // Hide current tab
+        if (this.activeTabId && this.tabs.has(this.activeTabId)) {
+            const currentTab = this.tabs.get(this.activeTabId);
+            currentTab.hide();
+            const currentBtn = document.getElementById(`btn-${this.activeTabId}`);
+            if (currentBtn) currentBtn.classList.remove('active');
+        }
+
+        // Show new tab
+        if (this.tabs.has(tabId)) {
+            const newTab = this.tabs.get(tabId);
+            newTab.show();
+            this.activeTabId = tabId;
+            const newBtn = document.getElementById(`btn-${tabId}`);
+            if (newBtn) newBtn.classList.add('active');
+        }
+    }
+
+    async closeTab(tabId) {
+        const tab = this.tabs.get(tabId);
+        if (!tab) return;
+
+        // Destroy the terminal (releases memory)
+        await tab.destroy();
+        this.tabs.delete(tabId);
+
+        // Remove tab button
+        const tabBtn = document.getElementById(`btn-${tabId}`);
+        if (tabBtn) tabBtn.remove();
+
+        // If we closed the active tab, switch to another
+        if (this.activeTabId === tabId) {
+            this.activeTabId = null;
+            const remainingTabs = Array.from(this.tabs.keys());
+            if (remainingTabs.length > 0) {
+                this.switchTab(remainingTabs[remainingTabs.length - 1]);
+            }
+        }
+
+        console.log(`Tab ${tabId} closed. Remaining tabs: ${this.tabs.size}`);
+    }
+
+    fitActiveTab() {
+        if (this.activeTabId && this.tabs.has(this.activeTabId)) {
+            this.tabs.get(this.activeTabId).fit();
         }
     }
 
@@ -350,10 +445,9 @@ class TerminalComponent {
         }
 
         if (state.rightPanelVisible) {
-            this.fit();
-            this.term?.focus();
-            if (!this.isConnected) {
-                this.startTerminal();
+            this.fitActiveTab();
+            if (this.tabs.size === 0) {
+                this.createTab('powershell');
             }
         }
     }
@@ -361,10 +455,9 @@ class TerminalComponent {
     show() {
         if (state) state.rightPanelVisible = true;
         if (this.panel) this.panel.style.display = 'flex';
-        this.fit();
-        this.term?.focus();
-        if (!this.isConnected) {
-            this.startTerminal();
+        this.fitActiveTab();
+        if (this.tabs.size === 0) {
+            this.createTab('powershell');
         }
     }
 
@@ -374,17 +467,10 @@ class TerminalComponent {
     }
 
     async destroy() {
-        this.stopReading();
-        if (this.terminalId) {
-            try {
-                await window.__TAURI__.core.invoke('close_terminal', { id: this.terminalId });
-            } catch (e) {
-                console.warn('Error closing terminal:', e);
-            }
+        for (const [tabId, tab] of this.tabs) {
+            await tab.destroy();
         }
-        if (this.term) {
-            this.term.dispose();
-        }
+        this.tabs.clear();
     }
 }
 
