@@ -47,10 +47,15 @@ class EditorComponent {
 
         // Editor input events - use debounced handler for expensive operations
         this.codeInput.addEventListener('input', () => this.handleInputDebounced());
-        this.codeInput.addEventListener('scroll', () => this.syncScroll());
+        this.codeInput.addEventListener('scroll', () => this.syncScrollFromEditor());
         this.codeInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.codeInput.addEventListener('click', () => this.updateCursor());
         this.codeInput.addEventListener('keyup', () => this.updateCursor());
+
+        // Preview scroll sync (bidirectional)
+        if (this.previewContent) {
+            this.previewContent.addEventListener('scroll', () => this.syncScrollFromPreview());
+        }
 
         // Preview button handlers
         if (this.togglePreviewBtn) {
@@ -59,6 +64,9 @@ class EditorComponent {
         if (this.refreshPreviewBtn) {
             this.refreshPreviewBtn.addEventListener('click', () => this.updatePreview());
         }
+
+        // Scroll sync state to prevent infinite loops
+        this.scrollSyncSource = null;
     }
 
     // Debounced input handler to prevent freezing on large files
@@ -197,10 +205,106 @@ class EditorComponent {
         state.setCursor(line, column);
     }
 
-    syncScroll() {
+    // Sync scroll from editor to preview and other elements
+    syncScrollFromEditor() {
+        // Prevent loop - if preview triggered this, ignore
+        if (this.scrollSyncSource === 'preview') {
+            return;
+        }
+        this.scrollSyncSource = 'editor';
+
+        // Sync line numbers and highlight
         this.codeHighlight.scrollTop = this.codeInput.scrollTop;
         this.codeHighlight.scrollLeft = this.codeInput.scrollLeft;
         this.lineNumbers.scrollTop = this.codeInput.scrollTop;
+
+        // Sync preview
+        const doc = state.getActiveDocument();
+        if (!doc || !this.previewEnabled || !this.isPreviewableFile(doc.language)) {
+            this.scrollSyncSource = null;
+            return;
+        }
+
+        // Calculate scroll percentage
+        const scrollTop = this.codeInput.scrollTop;
+        const scrollHeight = this.codeInput.scrollHeight - this.codeInput.clientHeight;
+        const scrollPercent = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+
+        if (doc.language === 'markdown') {
+            // Sync markdown preview div scroll
+            if (this.previewContent) {
+                const previewScrollHeight = this.previewContent.scrollHeight - this.previewContent.clientHeight;
+                this.previewContent.scrollTop = previewScrollHeight * scrollPercent;
+            }
+        } else if (doc.language === 'html') {
+            // Sync iframe scroll
+            if (this.previewFrame?.contentWindow) {
+                try {
+                    const iframeDoc = this.previewFrame.contentDocument || this.previewFrame.contentWindow.document;
+                    const iframeBody = iframeDoc.body || iframeDoc.documentElement;
+                    const iframeScrollHeight = iframeBody.scrollHeight - this.previewFrame.clientHeight;
+                    this.previewFrame.contentWindow.scrollTo(0, iframeScrollHeight * scrollPercent);
+                } catch (e) {
+                    // Ignore cross-origin errors
+                }
+            }
+        }
+
+        // Reset sync source after a short delay
+        setTimeout(() => { this.scrollSyncSource = null; }, 50);
+    }
+
+    // Sync scroll from preview to editor
+    syncScrollFromPreview() {
+        // Prevent loop - if editor triggered this, ignore
+        if (this.scrollSyncSource === 'editor') {
+            return;
+        }
+        this.scrollSyncSource = 'preview';
+
+        const doc = state.getActiveDocument();
+        if (!doc || !this.previewEnabled || !this.isPreviewableFile(doc.language)) {
+            this.scrollSyncSource = null;
+            return;
+        }
+
+        let scrollPercent = 0;
+
+        if (doc.language === 'markdown') {
+            // Get scroll percentage from preview content
+            if (this.previewContent) {
+                const scrollTop = this.previewContent.scrollTop;
+                const scrollHeight = this.previewContent.scrollHeight - this.previewContent.clientHeight;
+                scrollPercent = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+            }
+        } else if (doc.language === 'html') {
+            // Get scroll percentage from iframe
+            if (this.previewFrame?.contentWindow) {
+                try {
+                    const iframeWin = this.previewFrame.contentWindow;
+                    const iframeDoc = iframeWin.document;
+                    const iframeBody = iframeDoc.body || iframeDoc.documentElement;
+                    const scrollTop = iframeWin.scrollY || iframeDoc.documentElement.scrollTop;
+                    const scrollHeight = iframeBody.scrollHeight - this.previewFrame.clientHeight;
+                    scrollPercent = scrollHeight > 0 ? scrollTop / scrollHeight : 0;
+                } catch (e) {
+                    // Ignore cross-origin errors
+                    this.scrollSyncSource = null;
+                    return;
+                }
+            }
+        }
+
+        // Apply scroll to editor
+        const editorScrollHeight = this.codeInput.scrollHeight - this.codeInput.clientHeight;
+        this.codeInput.scrollTop = editorScrollHeight * scrollPercent;
+
+        // Also sync line numbers and highlight
+        this.codeHighlight.scrollTop = this.codeInput.scrollTop;
+        this.lineNumbers.scrollTop = this.codeInput.scrollTop;
+
+        // Reset sync source after a short delay
+        setTimeout(() => { this.scrollSyncSource = null; }, 50);
     }
 
     updateLineNumbers() {
