@@ -78,11 +78,36 @@
                     </div>
                 </div>
 
-                <!-- Code Editor (hidden initially) -->
-                <div class="code-editor" id="codeEditor" style="display: none;">
-                    <div class="line-numbers" id="lineNumbers"></div>
-                    <textarea class="code-input" id="codeInput" spellcheck="false"></textarea>
-                    <pre class="code-highlight" id="codeHighlight"></pre>
+                <!-- Code Editor with Split View -->
+                <div class="code-editor-wrapper" id="codeEditorWrapper" style="display: none;">
+                    <!-- Editor Section -->
+                    <div class="editor-section" id="editorSection">
+                        <div class="editor-toolbar">
+                            <span class="editor-mode" id="editorModeLabel">編輯</span>
+                            <button class="toolbar-btn" id="togglePreviewBtn" title="切換預覽 (Ctrl+Shift+P)"
+                                style="display: none;">
+                                <span>👁️ 預覽</span>
+                            </button>
+                        </div>
+                        <div class="code-editor" id="codeEditor">
+                            <div class="line-numbers" id="lineNumbers"></div>
+                            <textarea class="code-input" id="codeInput" spellcheck="false"></textarea>
+                            <pre class="code-highlight" id="codeHighlight"></pre>
+                        </div>
+                    </div>
+
+                    <!-- Preview Section (for Markdown/HTML) -->
+                    <div class="preview-section" id="previewSection" style="display: none;">
+                        <div class="editor-toolbar">
+                            <span class="editor-mode">預覽</span>
+                            <button class="toolbar-btn" id="refreshPreviewBtn" title="重新整理預覽">
+                                <span>🔄</span>
+                            </button>
+                        </div>
+                        <div class="preview-content" id="previewContent">
+                            <iframe id="previewFrame" sandbox="allow-scripts"></iframe>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>

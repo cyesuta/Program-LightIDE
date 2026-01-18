@@ -6,19 +6,33 @@ class EditorComponent {
     constructor() {
         this.container = document.getElementById('editorContainer');
         this.welcomeScreen = document.getElementById('welcomeScreen');
+        this.codeEditorWrapper = document.getElementById('codeEditorWrapper');
         this.codeEditor = document.getElementById('codeEditor');
         this.lineNumbers = document.getElementById('lineNumbers');
         this.codeInput = document.getElementById('codeInput');
         this.codeHighlight = document.getElementById('codeHighlight');
         this.tabContainer = document.getElementById('tabContainer');
 
+        // Split view elements
+        this.editorSection = document.getElementById('editorSection');
+        this.previewSection = document.getElementById('previewSection');
+        this.previewContent = document.getElementById('previewContent');
+        this.previewFrame = document.getElementById('previewFrame');
+        this.togglePreviewBtn = document.getElementById('togglePreviewBtn');
+        this.refreshPreviewBtn = document.getElementById('refreshPreviewBtn');
+
         // Performance optimization
         this.debounceTimer = null;
+        this.previewDebounceTimer = null;
         this.debounceDelay = 150; // ms
+        this.previewDebounceDelay = 300; // ms for preview updates
         this.lineHeight = 21; // pixels per line (matches CSS)
         this.visibleLineBuffer = 10; // extra lines to render above/below viewport
         this.cachedLineCount = 0;
         this.largeFileThreshold = 500; // disable syntax highlighting above this
+
+        // Preview state
+        this.previewEnabled = true; // Default to enabled for previewable files
 
         this.init();
     }
@@ -37,6 +51,14 @@ class EditorComponent {
         this.codeInput.addEventListener('keydown', (e) => this.handleKeyDown(e));
         this.codeInput.addEventListener('click', () => this.updateCursor());
         this.codeInput.addEventListener('keyup', () => this.updateCursor());
+
+        // Preview button handlers
+        if (this.togglePreviewBtn) {
+            this.togglePreviewBtn.addEventListener('click', () => this.togglePreview());
+        }
+        if (this.refreshPreviewBtn) {
+            this.refreshPreviewBtn.addEventListener('click', () => this.updatePreview());
+        }
     }
 
     // Debounced input handler to prevent freezing on large files
@@ -58,6 +80,16 @@ class EditorComponent {
             this.updateLineNumbers();
             this.highlightSyntax();
         }, this.debounceDelay);
+
+        // Debounce preview update (separate timer, slightly longer delay)
+        if (this.isPreviewableFile(doc?.language)) {
+            if (this.previewDebounceTimer) {
+                clearTimeout(this.previewDebounceTimer);
+            }
+            this.previewDebounceTimer = setTimeout(() => {
+                this.updatePreview();
+            }, this.previewDebounceDelay);
+        }
     }
 
     // Fast line count check - only updates if count changed
@@ -76,12 +108,28 @@ class EditorComponent {
         }
 
         this.welcomeScreen.style.display = 'none';
-        this.codeEditor.style.display = 'flex';
+        this.codeEditorWrapper.style.display = 'flex';
 
         this.codeInput.value = doc.content;
         this.updateLineNumbers();
         this.highlightSyntax();
         this.updateTabs();
+
+        // Check if this is a previewable file (Markdown or HTML)
+        const isPreviewable = this.isPreviewableFile(doc.language);
+
+        // Show/hide preview toggle button
+        if (this.togglePreviewBtn) {
+            this.togglePreviewBtn.style.display = isPreviewable ? 'flex' : 'none';
+        }
+
+        // Setup preview for previewable files
+        if (isPreviewable && this.previewEnabled) {
+            this.showPreview(true);
+            this.updatePreview();
+        } else {
+            this.showPreview(false);
+        }
 
         // Focus the editor
         this.codeInput.focus();
@@ -89,7 +137,7 @@ class EditorComponent {
 
     showWelcome() {
         this.welcomeScreen.style.display = 'flex';
-        this.codeEditor.style.display = 'none';
+        this.codeEditorWrapper.style.display = 'none';
         this.updateTabs();
     }
 
@@ -125,6 +173,15 @@ class EditorComponent {
         if (e.ctrlKey && e.key === 's') {
             e.preventDefault();
             this.saveCurrentDocument();
+        }
+
+        // Toggle preview shortcut (Ctrl+Shift+P)
+        if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+            e.preventDefault();
+            const doc = state.getActiveDocument();
+            if (doc && this.isPreviewableFile(doc.language)) {
+                this.togglePreview();
+            }
         }
     }
 
@@ -364,7 +421,181 @@ class EditorComponent {
             console.error('Error saving file:', error);
         }
     }
+
+    // ============================================
+    // Preview Methods
+    // ============================================
+
+    isPreviewableFile(language) {
+        return language === 'markdown' || language === 'html';
+    }
+
+    togglePreview() {
+        this.previewEnabled = !this.previewEnabled;
+        this.showPreview(this.previewEnabled);
+
+        if (this.previewEnabled) {
+            this.updatePreview();
+        }
+
+        // Update button state
+        if (this.togglePreviewBtn) {
+            this.togglePreviewBtn.classList.toggle('active', this.previewEnabled);
+        }
+    }
+
+    showPreview(show) {
+        if (!this.previewSection || !this.editorSection) return;
+
+        if (show) {
+            this.previewSection.style.display = 'flex';
+            this.editorSection.classList.add('with-preview');
+        } else {
+            this.previewSection.style.display = 'none';
+            this.editorSection.classList.remove('with-preview');
+        }
+    }
+
+    updatePreview() {
+        const doc = state.getActiveDocument();
+        if (!doc || !this.previewEnabled) return;
+
+        const content = this.codeInput.value;
+
+        if (doc.language === 'markdown') {
+            this.updateMarkdownPreview(content);
+        } else if (doc.language === 'html') {
+            this.updateHtmlPreview(content);
+        }
+    }
+
+    updateMarkdownPreview(content) {
+        if (!this.previewContent) return;
+
+        // Use div for Markdown preview (with our styles)
+        this.previewContent.classList.add('markdown-preview');
+
+        // Remove iframe if present
+        if (this.previewFrame) {
+            this.previewFrame.style.display = 'none';
+        }
+
+        // Parse and render Markdown
+        const html = this.parseMarkdown(content);
+
+        // Create or update preview div
+        let previewDiv = this.previewContent.querySelector('.markdown-render');
+        if (!previewDiv) {
+            previewDiv = document.createElement('div');
+            previewDiv.className = 'markdown-render';
+            this.previewContent.appendChild(previewDiv);
+        }
+        previewDiv.innerHTML = html;
+    }
+
+    updateHtmlPreview(content) {
+        if (!this.previewFrame || !this.previewContent) return;
+
+        // Use iframe for HTML preview
+        this.previewContent.classList.remove('markdown-preview');
+        this.previewFrame.style.display = 'block';
+
+        // Remove markdown preview div if present
+        const markdownDiv = this.previewContent.querySelector('.markdown-render');
+        if (markdownDiv) {
+            markdownDiv.remove();
+        }
+
+        // Write HTML to iframe
+        const iframeDoc = this.previewFrame.contentDocument || this.previewFrame.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(content);
+        iframeDoc.close();
+    }
+
+    // Simple Markdown parser
+    parseMarkdown(text) {
+        if (!text) return '';
+
+        let html = text;
+
+        // Escape HTML first
+        html = html
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // Code blocks (```)
+        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+            return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+        });
+
+        // Inline code (`)
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Headers
+        html = html.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
+        html = html.replace(/^#####\s+(.*)$/gm, '<h5>$1</h5>');
+        html = html.replace(/^####\s+(.*)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>');
+
+        // Bold and Italic
+        html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        html = html.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
+        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+        html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+        // Strikethrough
+        html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+        // Links
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+        // Images
+        html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+
+        // Horizontal rule
+        html = html.replace(/^[-*_]{3,}$/gm, '<hr>');
+
+        // Blockquotes
+        html = html.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
+        // Merge consecutive blockquotes
+        html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+
+        // Unordered lists
+        html = html.replace(/^[\*\-]\s+(.*)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+        // Ordered lists
+        html = html.replace(/^\d+\.\s+(.*)$/gm, '<li>$1</li>');
+
+        // Tables (basic support)
+        html = html.replace(/^\|(.+)\|$/gm, (match, content) => {
+            const cells = content.split('|').map(cell => cell.trim());
+            const isHeader = cells.every(cell => /^[-:]+$/.test(cell));
+            if (isHeader) return '';
+            const cellTag = 'td';
+            return '<tr>' + cells.map(cell => `<${cellTag}>${cell}</${cellTag}>`).join('') + '</tr>';
+        });
+        html = html.replace(/(<tr>.*<\/tr>\n?)+/g, '<table>$&</table>');
+
+        // Paragraphs
+        html = html.replace(/^(?!<[a-z]|$)(.+)$/gm, '<p>$1</p>');
+
+        // Clean up empty paragraphs
+        html = html.replace(/<p>\s*<\/p>/g, '');
+
+        // Line breaks
+        html = html.replace(/\n\n+/g, '\n');
+
+        return html;
+    }
 }
 
 // Initialize editor component
 let editor;
+
