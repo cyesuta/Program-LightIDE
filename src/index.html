@@ -41,6 +41,11 @@
         <aside class="panel panel-left" id="fileTreePanel">
             <div class="panel-header">
                 <span>檔案總管</span>
+                <div class="panel-actions">
+                    <button class="panel-btn" id="refreshFileTree" title="重新整理">
+                        <span>🔄</span>
+                    </button>
+                </div>
             </div>
             <div class="panel-content">
                 <div class="file-tree" id="fileTree">
@@ -116,24 +121,39 @@
         <!-- Resize Handle -->
         <div class="resize-handle resize-handle-right" id="rightResizeHandle"></div>
 
-        <!-- Right Panel: Terminal -->
+        <!-- Right Panel: Terminal / Claude -->
         <aside class="panel panel-right" id="terminalPanel">
             <div class="panel-header">
-                <span>終端機</span>
+                <div class="panel-mode-switcher">
+                    <button class="mode-btn active" id="modeTerminal" data-mode="terminal">終端機</button>
+                    <button class="mode-btn" id="modeClaude" data-mode="claude">Claude</button>
+                </div>
                 <button class="panel-btn" id="closeTerminalBtn" title="關閉面板">✕</button>
             </div>
-            <!-- Quick Commands Toolbar -->
+            <!-- Quick Commands Toolbar (terminal mode) -->
             <div class="terminal-quick-commands" id="terminalQuickCommands">
                 <div class="quick-commands-list" id="quickCommandsList">
                     <!-- Commands will be populated by terminal.js -->
                 </div>
                 <button class="quick-cmd-add" id="addQuickCmdBtn" title="新增快捷指令">+</button>
+                <button class="quick-cmd-add" id="pasteImageBtn" title="貼上圖片 (Ctrl+V)">🖼</button>
             </div>
-            <div class="panel-content terminal-content">
+            <!-- Terminal content -->
+            <div class="panel-content terminal-content" id="terminalContent">
                 <!-- Tab bar and terminals will be created by terminal.js -->
+            </div>
+            <!-- Claude chat content -->
+            <div class="panel-content claude-content" id="claudeContent" style="display:none;">
+                <!-- Claude chat will be created by claude-chat.js -->
             </div>
         </aside>
     </main>
+
+    <!-- Workspace Tab Bar -->
+    <div class="workspace-tab-bar">
+        <div class="workspace-tabs" id="workspaceTabs"></div>
+        <button class="workspace-add-btn" id="addWorkspaceBtn" title="新增工作區">+</button>
+    </div>
 
     <!-- Status Bar -->
     <footer class="statusbar">
@@ -151,6 +171,7 @@
 
     <!-- Scripts -->
     <script src="components/state.js"></script>
+    <script src="components/workspace.js"></script>
     <script src="components/file-tree.js"></script>
     <script src="components/tsx-compiler.js"></script>
     <script src="components/editor.js"></script>
@@ -158,6 +179,7 @@
     <script src="assets/xterm.min.js"></script>
     <script src="assets/xterm-addon-fit.min.js"></script>
     <script src="components/terminal.js"></script>
+    <script src="components/claude-chat.js"></script>
     <script src="components/statusbar.js"></script>
     <script src="components/app.js"></script>
 </body>

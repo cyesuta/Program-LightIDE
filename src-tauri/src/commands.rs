@@ -113,3 +113,79 @@ pub async fn rename_path(old_path: String, new_path: String) -> CommandResult<()
         Err(e) => CommandResult::err(&e.to_string()),
     }
 }
+
+/// Save a base64 image to project directory and return the path
+#[command]
+pub async fn save_temp_image(base64_data: String, filename: String, project_path: Option<String>) -> CommandResult<String> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    
+    // Decode base64
+    let image_data = match STANDARD.decode(&base64_data) {
+        Ok(data) => data,
+        Err(e) => return CommandResult::err(&format!("Base64 decode error: {}", e)),
+    };
+    
+    // Determine save directory - use project path if available, otherwise temp
+    let save_dir = if let Some(proj_path) = project_path {
+        PathBuf::from(proj_path).join(".lightide").join("images")
+    } else {
+        std::env::temp_dir().join("lightide_images")
+    };
+    
+    if let Err(e) = std::fs::create_dir_all(&save_dir) {
+        return CommandResult::err(&format!("Failed to create dir: {}", e));
+    }
+    
+    // Save file
+    let file_path = save_dir.join(&filename);
+    match std::fs::write(&file_path, &image_data) {
+        Ok(_) => CommandResult::ok(file_path.to_string_lossy().to_string()),
+        Err(e) => CommandResult::err(&format!("Failed to write file: {}", e)),
+    }
+}
+
+// ============================================
+// Claude SDK commands
+// ============================================
+
+/// Send a message to Claude via Agent SDK sidecar
+#[command]
+pub async fn claude_send_message(
+    app: tauri::AppHandle,
+    message: String,
+    cwd: Option<String>,
+    workspace_id: Option<String>,
+    session_id: Option<String>,
+) -> CommandResult<()> {
+    match crate::claude::send_message(
+        &app,
+        &message,
+        cwd.as_deref(),
+        workspace_id.as_deref(),
+        session_id.as_deref(),
+    ) {
+        Ok(_) => CommandResult::ok(()),
+        Err(e) => CommandResult::err(&e),
+    }
+}
+
+/// Abort current Claude request
+#[command]
+pub async fn claude_abort() -> CommandResult<()> {
+    crate::claude::abort();
+    CommandResult::ok(())
+}
+
+/// Abort a specific workspace's Claude request
+#[command]
+pub async fn claude_abort_workspace(workspace_id: String) -> CommandResult<()> {
+    crate::claude::abort_workspace(&workspace_id);
+    CommandResult::ok(())
+}
+
+/// Reset a workspace's Claude session
+#[command]
+pub async fn claude_reset_workspace(workspace_id: String) -> CommandResult<()> {
+    crate::claude::reset_workspace(&workspace_id);
+    CommandResult::ok(())
+}

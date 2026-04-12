@@ -1,11 +1,12 @@
 //! Terminal Tauri commands
 //!
-//! Exposes terminal functionality to the frontend
+//! Exposes terminal functionality to the frontend.
+//! Output is pushed via Tauri events (terminal-output, terminal-exit).
 
 use crate::terminal::{ShellType, TERMINAL_MANAGER};
 use crate::commands::CommandResult;
 use serde::{Deserialize, Serialize};
-use tauri::command;
+use tauri::{command, AppHandle};
 
 /// Terminal info returned to frontend
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,9 +16,14 @@ pub struct TerminalInfo {
     pub shell_type: String,
 }
 
-/// Create a new terminal session
+/// Create a new terminal session.
+/// Output will be pushed to the frontend via `terminal-output` events.
 #[command]
-pub async fn create_terminal(shell: String, cwd: Option<String>) -> CommandResult<TerminalInfo> {
+pub async fn create_terminal(
+    app: AppHandle,
+    shell: String,
+    cwd: Option<String>,
+) -> CommandResult<TerminalInfo> {
     let shell_type = match shell.to_lowercase().as_str() {
         "powershell" | "ps" => ShellType::PowerShell,
         "cmd" => ShellType::Cmd,
@@ -25,7 +31,7 @@ pub async fn create_terminal(shell: String, cwd: Option<String>) -> CommandResul
         _ => ShellType::PowerShell, // Default to PowerShell
     };
 
-    match TERMINAL_MANAGER.create_terminal(shell_type, cwd) {
+    match TERMINAL_MANAGER.create_terminal(shell_type, cwd, app) {
         Ok(id) => CommandResult::ok(TerminalInfo {
             id,
             shell_type: shell,
@@ -39,15 +45,6 @@ pub async fn create_terminal(shell: String, cwd: Option<String>) -> CommandResul
 pub async fn write_terminal(id: String, input: String) -> CommandResult<()> {
     match TERMINAL_MANAGER.write_to_terminal(&id, &input) {
         Ok(_) => CommandResult::ok(()),
-        Err(e) => CommandResult::err(&e.to_string()),
-    }
-}
-
-/// Read output from terminal
-#[command]
-pub async fn read_terminal(id: String) -> CommandResult<String> {
-    match TERMINAL_MANAGER.read_from_terminal(&id) {
-        Ok(output) => CommandResult::ok(output),
         Err(e) => CommandResult::err(&e.to_string()),
     }
 }

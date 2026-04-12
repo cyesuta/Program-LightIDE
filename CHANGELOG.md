@@ -68,6 +68,64 @@
 
 ## 開發日誌
 
+### 2026-04-12
+- ✅ **多工作區支援 (Workspace Tabs)**
+  - 左下方新增工作區 tab bar，支援多個獨立工作區
+  - 每個 workspace 有獨立的：專案路徑、檔案樹、開啟檔案、編輯器狀態、Claude 對話、Claude session
+  - `+` 按鈕新增工作區，每個 tab 可獨立關閉
+  - 切換 workspace 時自動保存/恢復完整狀態
+- ✅ **Claude Code 整合 (Agent SDK)**
+  - 右側面板新增模式切換器 (終端機 / Claude)
+  - 使用 `@anthropic-ai/claude-agent-sdk` 透過 Node.js sidecar
+  - 長駐 sidecar 進程避免每次訊息重新載入 context
+  - 使用已登入的 Claude 帳號（無需 API key）
+  - Rust 端管理 sidecar 生命週期，stdin/stdout JSON lines 通訊
+  - **Per-workspace session 隔離**：每個 workspace 有獨立的 sidecar session_id
+  - **Session 持久化**：使用 `resume` 參數接續對話，SDK 自動保存至 `~/.claude/projects/`
+  - **並發查詢**：多個 workspace 可同時運行各自的 Claude 查詢，互不干擾
+  - **事件路由**：sidecar 事件帶 `workspaceId`，前端自動路由到對應 view
+- ✅ **Claude 聊天介面**
+  - 即時串流顯示 assistant 文字、工具呼叫、工具結果
+  - 工具執行框顯示即時狀態（執行中 spinner → 完成/錯誤）
+  - Bash、Read、Write、Edit、Grep、Glob 等工具有獨立圖示
+  - 工具輸出完整顯示在可滾動框內（max 8KB，超過截斷）
+  - 頂部狀態列顯示即時計時器與 token 計數（輸入/輸出）
+  - Markdown 渲染：標題、粗體、表格、程式碼塊、清單、引用、連結
+  - 所有訊息內容可選取複製
+  - 新對話 / 中止 按鈕
+  - `permissionMode: bypassPermissions` 自動執行工具不詢問
+- ✅ **檔案樹效能優化**
+  - innerHTML 字串拼接取代逐個 createElement，大幅減少 DOM 操作
+  - 事件委派：3 個監聽器掛在容器上，取代每個項目各 3 個
+  - 選取檔案時僅更新 CSS class，不再重繪整棵樹
+  - 修復空目錄展開時無限循環卡死的 bug
+- ✅ **Panel 佈局修正**
+  - 修復 flex 佈局 `min-height: 0` 缺失導致子元素無法正確滾動
+  - Claude 聊天框內多個工具區塊時整體有滾動條
+  - 右側面板可拉至最寬 1400px（原為 500px）
+  - Claude 聊天字體放大 1.5x
+- ✅ **持久化 (LocalStorage)**
+  - Workspace tabs 列表持久化（projectPath、claudeSessionId）
+  - Claude 對話歷史 HTML 持久化（每個 workspace 獨立）
+  - 重啟後自動恢復所有 tab、active workspace 及聊天記錄
+  - 跨重啟接續對話：發送訊息時帶 sessionId 給 sidecar，使用 SDK `resume` 參數
+- ✅ **Claude 工具改進**
+  - **檔案修改自動刷新編輯器**：Write/Edit/MultiEdit 完成後若該檔案在編輯器開啟，自動重新讀取磁碟內容
+  - **Diff 顯示**：Edit/MultiEdit 顯示紅色 `-` 舊行 / 綠色 `+` 新行；Write 非同步讀取舊內容做完整 diff
+  - **長行換行**：diff 用 `pre-wrap` + `break-all`，無水平滾動條
+  - **檔案路徑可雙擊開啟**：Read/Write/Edit/Grep 等工具的 file_path 可雙擊在編輯器開啟預覽
+- ✅ **檔案樹顯示 dotfiles**
+  - 不再隱藏所有 `.` 開頭檔案，現在 `.env`、`.gitignore` 等可見
+  - 仍隱藏：`node_modules`、`target`、`__pycache__`、`.git`、`.next`、`.DS_Store`
+- ✅ 刪除根目錄舊版 `lightide.exe`
+
+### 2026-04-11
+- ✅ **終端機輸出改為即時串流 (Event-Driven)**
+  - 廢除原本每 50ms 輪詢 (`read_terminal`) 的低效作法
+  - PTY 後端取得輸出資料後，立即透過 Tauri Events (`terminal-output`) 推送至前端
+  - 完美支援 CLI 應用程式（如 Claude Code）的即時進度條渲染，絕無延遲
+  - 新增 `terminal-exit` 事件監聽機制，在進程結束時提示
+
 ### 2026-01-18
 - ✅ 修復大型文件 (10000+ 行) 開啟時凍結問題
 - ✅ 添加 Debounce 輸入處理機制
@@ -89,6 +147,16 @@
   - 預設指令：npm dev/build、git status/pull/push、clear
   - 支援自訂指令（支援多行指令）
   - 指令儲存在 localStorage
+- ✅ **終端機圖片貼上助手**
+  - 新增圖片貼上按鈕 (🖼)
+  - 支援 Ctrl+V 貼上或拖放圖片
+  - 支援框選圖片區域
+  - 自動保存圖片至專案目錄 (`.lightide/images/`) 避免權限問題
+  - 點擊傳送路徑至終端機，方便 LLM 讀取
+- ✅ **檔案樹功能增強**
+  - **右鍵點擊**：複製檔案/資料夾絕對路徑 (閃爍提示)
+  - **滑鼠中鍵**：內嵌式重命名檔案 (類似 Windows 檔案總管)
+  - **左鍵單擊**：標準開啟檔案/切換目錄
 
 ### 2026-01-17
 - ✅ 添加 MIT LICENSE

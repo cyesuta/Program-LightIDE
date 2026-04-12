@@ -4,6 +4,7 @@
 
 class App {
     constructor() {
+        window.app = this;
         this.init();
     }
 
@@ -18,6 +19,19 @@ class App {
         editor = new EditorComponent();
         terminal = new TerminalComponent();
         statusBar = new StatusBarComponent();
+
+        // Initialize Claude chat eagerly (so workspace views can be created)
+        const claudeContent = document.getElementById('claudeContent');
+        this.claudeChat = new ClaudeChatComponent();
+        this.claudeChat.init(claudeContent);
+        this.claudeChat.hide(); // hidden by default (terminal mode)
+
+        this.currentMode = 'terminal';
+        this.setupModeSwitcher();
+
+        // Initialize workspace manager (must be after other components)
+        workspaceManager = new WorkspaceManager();
+        workspaceManager.init();
 
         // Setup event listeners
         this.setupKeyboardShortcuts();
@@ -110,6 +124,9 @@ class App {
 
                 // Load file tree
                 await fileTree.loadDirectory(path);
+
+                // Persist workspace state
+                workspaceManager?.save();
             } else {
                 alert('無法開啟目錄: ' + result.error);
             }
@@ -151,7 +168,8 @@ class App {
             const delta = side === 'left'
                 ? e.clientX - startX
                 : startX - e.clientX;
-            const newWidth = Math.max(150, Math.min(startWidth + delta, 500));
+            const maxWidth = Math.min(window.innerWidth - 200, 1400);
+            const newWidth = Math.max(150, Math.min(startWidth + delta, maxWidth));
             panel.style.width = `${newWidth}px`;
         });
 
@@ -163,6 +181,46 @@ class App {
                 document.body.style.userSelect = '';
             }
         });
+    }
+
+    setupModeSwitcher() {
+        const modeTerminal = document.getElementById('modeTerminal');
+        const modeClaude = document.getElementById('modeClaude');
+
+        if (modeTerminal) {
+            modeTerminal.addEventListener('click', () => this.switchMode('terminal'));
+        }
+        if (modeClaude) {
+            modeClaude.addEventListener('click', () => this.switchMode('claude'));
+        }
+    }
+
+    switchMode(mode) {
+        if (mode === this.currentMode) return;
+        this.currentMode = mode;
+
+        const terminalContent = document.getElementById('terminalContent');
+        const claudeContent = document.getElementById('claudeContent');
+        const quickCmds = document.getElementById('terminalQuickCommands');
+        const modeTerminal = document.getElementById('modeTerminal');
+        const modeClaude = document.getElementById('modeClaude');
+
+        if (mode === 'terminal') {
+            terminalContent.style.display = 'flex';
+            claudeContent.style.display = 'none';
+            quickCmds.style.display = 'flex';
+            modeTerminal.classList.add('active');
+            modeClaude.classList.remove('active');
+            terminal.fitActiveTab();
+        } else {
+            terminalContent.style.display = 'none';
+            claudeContent.style.display = 'flex';
+            quickCmds.style.display = 'none';
+            modeTerminal.classList.remove('active');
+            modeClaude.classList.add('active');
+
+            this.claudeChat.show();
+        }
     }
 
     setupUIEvents() {

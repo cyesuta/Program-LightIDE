@@ -158,6 +158,26 @@ class EditorComponent {
         }
     }
 
+    // Reload a file from disk (called when external changes occur, e.g., Claude writes)
+    async reloadFile(path) {
+        if (!state.documents.has(path)) return; // not open
+        try {
+            const result = await window.__TAURI__.core.invoke('read_file', { path });
+            if (!result.success) return;
+            const doc = state.documents.get(path);
+            doc.content = result.data;
+            doc.modified = false;
+            // If currently active, re-render editor and preview
+            if (state.activeDocument === path) {
+                this.showEditor(doc);
+            }
+            // Update tabs to clear modified indicator
+            this.updateTabs();
+        } catch (e) {
+            console.error('Failed to reload file:', e);
+        }
+    }
+
     // Legacy handler - kept for Tab key handling
     handleInput() {
         this.handleInputDebounced();
@@ -315,21 +335,26 @@ class EditorComponent {
         if (lineCount > 1000) {
             // Use a spacer div for height instead of individual line elements
             const totalHeight = lineCount * this.lineHeight;
+            // Generate simple counter string (e.g. "1\n2\n3...")
+            // Limit to max 5000 lines to prevent CSS content string from being too massive
+            const maxVisibleLines = Math.min(lineCount, 5000);
+            const lineString = Array.from({ length: maxVisibleLines }, (_, i) => i + 1).join('\\A ');
+            
             this.lineNumbers.innerHTML = `
-                <div class="line-numbers-virtual" style="height: ${totalHeight}px;">
+                <div class="line-numbers-virtual" style="height: ${totalHeight}px; position: relative;">
                     <style>
                         .line-numbers-virtual::before {
-                            content: '${Array.from({ length: Math.min(lineCount, 100) }, (_, i) => i + 1).join('\\A')}';
+                            content: '${lineString}';
                             white-space: pre;
                             display: block;
+                            color: var(--text-secondary);
+                            text-align: right;
+                            padding-right: 12px;
+                            line-height: ${this.lineHeight}px;
+                            font-family: var(--font-mono);
+                            font-size: 14px;
                         }
                     </style>
-                </div>
-            `;
-            // Show simple line count indicator for very large files
-            this.lineNumbers.innerHTML = `
-                <div class="line-numbers-large" style="height: ${totalHeight}px;">
-                    ${Array.from({ length: lineCount }, (_, i) => `<div class="line-number">${i + 1}</div>`).join('')}
                 </div>
             `;
         } else {

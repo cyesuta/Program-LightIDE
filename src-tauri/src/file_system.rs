@@ -73,14 +73,15 @@ impl FileSystem {
             let entry = entry?;
             let path = entry.path();
 
-            // Skip hidden files and common ignored directories
+            // Skip common heavy/noisy directories (keep dotfiles like .env, .gitignore)
             if let Some(name) = path.file_name() {
                 let name_str = name.to_string_lossy();
-                if name_str.starts_with('.')
-                    || name_str == "node_modules"
+                if name_str == "node_modules"
                     || name_str == "target"
                     || name_str == "__pycache__"
                     || name_str == ".git"
+                    || name_str == ".next"
+                    || name_str == ".DS_Store"
                 {
                     continue;
                 }

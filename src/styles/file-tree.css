@@ -11,7 +11,7 @@
 .tree-item {
     display: flex;
     align-items: center;
-    height: 24px;
+    height: 36px;
     padding: 0 8px;
     cursor: pointer;
     transition: background var(--transition-fast);
@@ -30,37 +30,37 @@
     background: var(--bg-active);
 }
 
-/* Indentation */
+/* Indentation - adjusted for larger items */
 .tree-item[data-depth="0"] {
     padding-left: 8px;
 }
 
 .tree-item[data-depth="1"] {
-    padding-left: 24px;
+    padding-left: 28px;
 }
 
 .tree-item[data-depth="2"] {
-    padding-left: 40px;
+    padding-left: 48px;
 }
 
 .tree-item[data-depth="3"] {
-    padding-left: 56px;
+    padding-left: 68px;
 }
 
 .tree-item[data-depth="4"] {
-    padding-left: 72px;
-}
-
-.tree-item[data-depth="5"] {
     padding-left: 88px;
 }
 
+.tree-item[data-depth="5"] {
+    padding-left: 108px;
+}
+
 .tree-item[data-depth="6"] {
-    padding-left: 104px;
+    padding-left: 128px;
 }
 
 .tree-item[data-depth="7"] {
-    padding-left: 120px;
+    padding-left: 148px;
 }
 
 /* Expand/Collapse Arrow */
@@ -68,9 +68,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    font-size: 8px;
+    width: 20px;
+    height: 20px;
+    font-size: 14px;
     color: var(--text-muted);
     transition: transform var(--transition-fast);
 }
@@ -88,10 +88,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
-    margin-right: 6px;
-    font-size: 14px;
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+    font-size: 20px;
 }
 
 /* Folder icons by state */
@@ -157,8 +157,9 @@
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 13px;
+    font-size: 18px;
     color: var(--text-primary);
+    line-height: 36px;
 }
 
 .tree-item.folder>.tree-name {

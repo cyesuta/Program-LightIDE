@@ -49,13 +49,16 @@
 }
 
 /* Reset & Base */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
     height: 100%;
     overflow: hidden;
     font-family: var(--font-sans);
@@ -274,9 +277,9 @@ html, body {
 }
 
 .panel-right {
-    width: 300px;
+    width: 420px;
     min-width: 200px;
-    max-width: 500px;
+    max-width: 1400px;
     border-left: 1px solid var(--border);
 }
 
@@ -288,7 +291,7 @@ html, body {
     padding: 0 12px;
     background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border);
-    font-size: 11px;
+    font-size: 16px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -299,14 +302,14 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     background: transparent;
     border: none;
     border-radius: 3px;
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 10px;
+    font-size: 16px;
     transition: all var(--transition-fast);
 }
 
@@ -317,7 +320,119 @@ html, body {
 
 .panel-content {
     flex: 1;
+    min-height: 0;
     overflow: auto;
+}
+
+/* ============================================
+   Workspace Tab Bar (bottom-left, above statusbar)
+   ============================================ */
+.workspace-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border);
+    padding: 2px 4px;
+    min-height: 28px;
+    flex-shrink: 0;
+}
+
+.workspace-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    overflow-x: auto;
+    max-width: calc(100% - 36px);
+}
+
+.workspace-tabs::-webkit-scrollbar {
+    height: 3px;
+}
+
+.workspace-tabs::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 2px;
+}
+
+.workspace-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px 4px 0 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    border-bottom: none;
+    max-width: 180px;
+}
+
+.workspace-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.workspace-tab.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.workspace-tab .ws-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.workspace-tab .ws-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    border-radius: 2px;
+}
+
+.workspace-tab .ws-tab-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+    opacity: 1;
+}
+
+.workspace-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+}
+
+.workspace-add-btn:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+    border-style: solid;
 }
 
 /* ============================================

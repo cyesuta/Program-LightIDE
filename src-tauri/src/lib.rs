@@ -3,6 +3,7 @@
 //! Rust backend for the Tauri-based code editor
 
 mod commands;
+mod claude;
 mod file_system;
 mod editor;
 mod terminal;
@@ -27,10 +28,15 @@ pub fn run() {
             commands::create_directory,
             commands::delete_path,
             commands::rename_path,
+            commands::save_temp_image,
+            // Claude commands
+            commands::claude_send_message,
+            commands::claude_abort,
+            commands::claude_abort_workspace,
+            commands::claude_reset_workspace,
             // Terminal commands
             terminal_commands::create_terminal,
             terminal_commands::write_terminal,
-            terminal_commands::read_terminal,
             terminal_commands::resize_terminal,
             terminal_commands::close_terminal,
             terminal_commands::is_terminal_alive,

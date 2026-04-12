@@ -71,8 +71,9 @@ class AppState {
     }
 
     setSelectedPath(path) {
+        const oldPath = this.selectedPath;
         this.selectedPath = path;
-        this.emit('selectionChanged', path);
+        this.emit('selectionChanged', { oldPath, newPath: path });
     }
 
     // Document management

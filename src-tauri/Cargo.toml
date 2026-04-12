@@ -28,6 +28,7 @@ parking_lot = "0.12"
 uuid = { version = "1", features = ["v4"] }
 lazy_static = "1.4"
 portable-pty = "0.8"
+base64 = "0.22"
 
 [profile.release]
 opt-level = 3

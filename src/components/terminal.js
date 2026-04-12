@@ -12,7 +12,8 @@ class TerminalTab {
         this.fitAddon = null;
         this.terminalId = null;
         this.isConnected = false;
-        this.readIntervalId = null;
+        this._outputUnlisten = null;
+        this._exitUnlisten = null;
         this.container = null;
     }
 
@@ -28,7 +29,7 @@ class TerminalTab {
         this.term = new Terminal({
             cursorBlink: true,
             cursorStyle: 'bar',
-            fontSize: 13,
+            fontSize: 20,
             fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
             theme: {
                 background: '#1e1e1e',
@@ -143,40 +144,46 @@ class TerminalTab {
     }
 
     startReading() {
-        if (this.readIntervalId) {
-            clearInterval(this.readIntervalId);
-            this.readIntervalId = null;
-        }
+        // Clean up previous listener if any
+        this.stopReading();
 
         if (!this.terminalId || !this.isConnected) return;
 
         const terminalId = this.terminalId;
 
-        this.readIntervalId = setInterval(async () => {
-            if (this.terminalId !== terminalId || !this.isConnected) {
-                clearInterval(this.readIntervalId);
-                this.readIntervalId = null;
-                return;
-            }
-
-            try {
-                const result = await window.__TAURI__.core.invoke('read_terminal', {
-                    id: terminalId
-                });
-
-                if (result.success && result.data && result.data.length > 0) {
-                    this.term.write(result.data);
+        // Listen for real-time output events pushed from backend
+        if (window.__TAURI__?.event?.listen) {
+            window.__TAURI__.event.listen('terminal-output', (event) => {
+                const { terminalId: eventTermId, data } = event.payload;
+                // Only process events for this terminal tab
+                if (eventTermId === terminalId && this.isConnected && this.term) {
+                    this.term.write(data);
                 }
-            } catch (error) {
-                console.error('Error reading terminal:', error);
-            }
-        }, 50);
+            }).then(unlisten => {
+                this._outputUnlisten = unlisten;
+            });
+
+            window.__TAURI__.event.listen('terminal-exit', (event) => {
+                const { terminalId: eventTermId } = event.payload;
+                if (eventTermId === terminalId && this.term) {
+                    this.term.writeln('\r\n\x1b[33m⚠ 終端機程序已結束\x1b[0m');
+                    this.isConnected = false;
+                }
+            }).then(unlisten => {
+                this._exitUnlisten = unlisten;
+            });
+        }
     }
 
     stopReading() {
-        if (this.readIntervalId) {
-            clearInterval(this.readIntervalId);
-            this.readIntervalId = null;
+        // Unsubscribe from Tauri events
+        if (this._outputUnlisten) {
+            this._outputUnlisten();
+            this._outputUnlisten = null;
+        }
+        if (this._exitUnlisten) {
+            this._exitUnlisten();
+            this._exitUnlisten = null;
         }
     }
 
@@ -510,9 +517,14 @@ class TerminalComponent {
     setupQuickCommands() {
         this.quickCommandsList = document.getElementById('quickCommandsList');
         const addBtn = document.getElementById('addQuickCmdBtn');
+        const pasteImageBtn = document.getElementById('pasteImageBtn');
 
         if (addBtn) {
             addBtn.addEventListener('click', () => this.showAddCommandModal());
+        }
+
+        if (pasteImageBtn) {
+            pasteImageBtn.addEventListener('click', () => this.showImagePasteModal());
         }
 
         this.renderQuickCommands();
@@ -654,6 +666,250 @@ class TerminalComponent {
         this.customQuickCommands = this.customQuickCommands.filter(cmd => cmd.id !== id);
         this.saveCustomCommands();
         this.renderQuickCommands();
+    }
+
+    // ============================================
+    // Image Paste Modal
+    // ============================================
+
+    showImagePasteModal() {
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'image-paste-modal';
+        modal.innerHTML = `
+            <div class="image-paste-content">
+                <div class="image-paste-header">
+                    <h3>貼上圖片</h3>
+                    <button class="image-paste-close">✕</button>
+                </div>
+                <div class="image-paste-area">
+                    <div class="image-paste-placeholder">
+                        <div class="icon">📋</div>
+                        <p>按 Ctrl+V 貼上截圖</p>
+                        <p style="font-size: 11px;">或拖放圖片到此處</p>
+                    </div>
+                    <div class="image-paste-canvas-container">
+                        <canvas class="image-paste-canvas"></canvas>
+                        <div class="selection-overlay" style="display:none;"></div>
+                    </div>
+                </div>
+                <div class="image-paste-info"></div>
+                <div class="image-paste-actions">
+                    <button class="btn-secondary" data-action="clear">清除</button>
+                    <button class="btn-secondary" data-action="select-all">全選</button>
+                    <button class="btn-primary" data-action="copy" disabled>傳送圖片路徑</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Elements
+        const pasteArea = modal.querySelector('.image-paste-area');
+        const placeholder = modal.querySelector('.image-paste-placeholder');
+        const canvasContainer = modal.querySelector('.image-paste-canvas-container');
+        const canvas = modal.querySelector('.image-paste-canvas');
+        const ctx = canvas.getContext('2d');
+        const selectionOverlay = modal.querySelector('.selection-overlay');
+        const infoText = modal.querySelector('.image-paste-info');
+        const copyBtn = modal.querySelector('[data-action="copy"]');
+        const clearBtn = modal.querySelector('[data-action="clear"]');
+        const selectAllBtn = modal.querySelector('[data-action="select-all"]');
+
+        let imageData = null;
+        let selection = null;
+        let isSelecting = false;
+        let startX = 0, startY = 0;
+
+        // Handle paste
+        const handlePaste = (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    const blob = item.getAsFile();
+                    loadImage(blob);
+                    e.preventDefault();
+                    break;
+                }
+            }
+        };
+
+        // Handle drop
+        const handleDrop = (e) => {
+            e.preventDefault();
+            const files = e.dataTransfer?.files;
+            if (files && files[0] && files[0].type.startsWith('image/')) {
+                loadImage(files[0]);
+            }
+        };
+
+        const loadImage = (blob) => {
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+                imageData = img;
+
+                placeholder.style.display = 'none';
+                canvasContainer.classList.add('active');
+                pasteArea.classList.add('has-image');
+
+                infoText.textContent = `圖片大小: ${img.width} x ${img.height}px`;
+                copyBtn.disabled = false;
+
+                // Select all by default
+                selection = { x: 0, y: 0, w: img.width, h: img.height };
+                updateSelectionOverlay();
+
+                URL.revokeObjectURL(img.src); // Clean up
+            };
+            img.src = URL.createObjectURL(blob);
+        };
+
+        const updateSelectionOverlay = () => {
+            if (!selection || !imageData) {
+                selectionOverlay.style.display = 'none';
+                return;
+            }
+
+            const scaleX = canvas.offsetWidth / canvas.width;
+            const scaleY = canvas.offsetHeight / canvas.height;
+
+            selectionOverlay.style.display = 'block';
+            selectionOverlay.style.left = (selection.x * scaleX) + 'px';
+            selectionOverlay.style.top = (selection.y * scaleY) + 'px';
+            selectionOverlay.style.width = (selection.w * scaleX) + 'px';
+            selectionOverlay.style.height = (selection.h * scaleY) + 'px';
+
+            infoText.textContent = `選取區域: ${selection.w} x ${selection.h}px (從 ${selection.x}, ${selection.y})`;
+        };
+
+        // Mouse selection
+        canvas.addEventListener('mousedown', (e) => {
+            if (!imageData) return;
+            isSelecting = true;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / canvas.offsetWidth;
+            const scaleY = canvas.height / canvas.offsetHeight;
+            startX = (e.clientX - rect.left) * scaleX;
+            startY = (e.clientY - rect.top) * scaleY;
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isSelecting || !imageData) return;
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / canvas.offsetWidth;
+            const scaleY = canvas.height / canvas.offsetHeight;
+            const endX = (e.clientX - rect.left) * scaleX;
+            const endY = (e.clientY - rect.top) * scaleY;
+
+            selection = {
+                x: Math.min(startX, endX),
+                y: Math.min(startY, endY),
+                w: Math.abs(endX - startX),
+                h: Math.abs(endY - startY)
+            };
+            updateSelectionOverlay();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isSelecting = false;
+        });
+
+        // Clear
+        clearBtn.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            imageData = null;
+            selection = null;
+            placeholder.style.display = 'block';
+            canvasContainer.classList.remove('active');
+            pasteArea.classList.remove('has-image');
+            selectionOverlay.style.display = 'none';
+            infoText.textContent = '';
+            copyBtn.disabled = true;
+        });
+
+        // Select all
+        selectAllBtn.addEventListener('click', () => {
+            if (!imageData) return;
+            selection = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+            updateSelectionOverlay();
+        });
+
+        // Save to temp file and send path
+        copyBtn.addEventListener('click', async () => {
+            if (!imageData || !selection) return;
+
+            // Create a temp canvas for the selected region
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = Math.round(selection.w);
+            tempCanvas.height = Math.round(selection.h);
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, selection.x, selection.y, selection.w, selection.h, 0, 0, tempCanvas.width, tempCanvas.height);
+
+            const base64 = tempCanvas.toDataURL('image/png');
+            const base64Data = base64.replace(/^data:image\/png;base64,/, '');
+            const sizeKB = Math.round(base64Data.length * 0.75 / 1024);
+
+            try {
+                // Save to project directory using Tauri
+                const result = await window.__TAURI__.core.invoke('save_temp_image', {
+                    base64Data: base64Data,
+                    filename: `clipboard_${Date.now()}.png`,
+                    projectPath: state.projectPath || null
+                });
+
+                if (result.success && result.data) {
+                    const filePath = result.data;
+                    // Send file path to terminal
+                    this.executeCommand(filePath);
+                    console.log(`[圖片已保存] ${tempCanvas.width}x${tempCanvas.height}px, ${sizeKB}KB -> ${filePath}`);
+                } else {
+                    throw new Error(result.error || 'Unknown error');
+                }
+            } catch (e) {
+                console.error('Failed to save image:', e);
+                // Fallback: copy base64 to clipboard
+                await navigator.clipboard.writeText(base64);
+                alert('無法保存檔案，已複製 Base64 到剪貼簿');
+            }
+
+            // Cleanup and close
+            imageData = null;
+            selection = null;
+            modal.remove();
+            document.removeEventListener('paste', handlePaste);
+        });
+
+        // Close
+        modal.querySelector('.image-paste-close').addEventListener('click', () => {
+            imageData = null;
+            selection = null;
+            modal.remove();
+            document.removeEventListener('paste', handlePaste);
+        });
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                imageData = null;
+                selection = null;
+                modal.remove();
+                document.removeEventListener('paste', handlePaste);
+            }
+        });
+
+        // Drag and drop
+        pasteArea.addEventListener('dragover', (e) => e.preventDefault());
+        pasteArea.addEventListener('drop', handleDrop);
+
+        // Listen for paste
+        document.addEventListener('paste', handlePaste);
+
+        // Focus for paste to work
+        modal.focus();
     }
 }
 

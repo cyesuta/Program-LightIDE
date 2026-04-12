@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LightIDE - File Tree Component
  */
 
@@ -13,10 +13,55 @@ class FileTreeComponent {
         // Listen for state changes
         state.on('fileTreeChanged', () => this.render());
         state.on('folderToggled', () => this.render());
-        state.on('selectionChanged', () => this.render());
+        state.on('selectionChanged', (data) => this.updateSelection(data?.oldPath, data?.newPath));
+
+        // Event delegation — single listener for all tree items
+        this.container.addEventListener('click', (e) => {
+            const el = e.target.closest('.tree-item');
+            if (!el) return;
+            const path = el.dataset.path;
+            const item = this.findItemByPath(state.fileTree, path);
+            if (item) this.handleItemClick(item);
+        });
+        this.container.addEventListener('auxclick', (e) => {
+            if (e.button !== 1) return;
+            const el = e.target.closest('.tree-item');
+            if (!el) return;
+            e.preventDefault();
+            const item = this.findItemByPath(state.fileTree, el.dataset.path);
+            if (item) this.rename(item);
+        });
+        this.container.addEventListener('contextmenu', (e) => {
+            const el = e.target.closest('.tree-item');
+            if (!el) return;
+            e.preventDefault();
+            const item = this.findItemByPath(state.fileTree, el.dataset.path);
+            if (item) this.copyPath(item);
+        });
 
         // Close context menu on click elsewhere
         document.addEventListener('click', () => this.hideContextMenu());
+
+        // Refresh button
+        const refreshBtn = document.getElementById('refreshFileTree');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                if (state.projectPath) {
+                    this.loadDirectory(state.projectPath);
+                }
+            });
+        }
+    }
+
+    findItemByPath(items, path) {
+        for (const item of items) {
+            if (item.path === path) return item;
+            if (item.children) {
+                const found = this.findItemByPath(item.children, path);
+                if (found) return found;
+            }
+        }
+        return null;
     }
 
     async loadDirectory(path) {
@@ -32,6 +77,17 @@ class FileTreeComponent {
         }
     }
 
+    updateSelection(oldPath, newPath) {
+        if (oldPath) {
+            const oldEl = this.container.querySelector(`[data-path="${CSS.escape(oldPath)}"]`);
+            if (oldEl) oldEl.classList.remove('selected');
+        }
+        if (newPath) {
+            const newEl = this.container.querySelector(`[data-path="${CSS.escape(newPath)}"]`);
+            if (newEl) newEl.classList.add('selected');
+        }
+    }
+
     render() {
         if (state.fileTree.length === 0) {
             this.container.innerHTML = `
@@ -43,83 +99,40 @@ class FileTreeComponent {
             return;
         }
 
-        this.container.innerHTML = '';
-        this.renderItems(state.fileTree, 0);
+        const parts = [];
+        const pendingLoads = [];
+        this.buildHTML(state.fileTree, 0, parts, pendingLoads);
+        this.container.innerHTML = parts.join('');
+        pendingLoads.forEach(path => this.loadChildren(path, 0));
     }
 
-    renderItems(items, depth) {
-        items.forEach(item => {
-            const element = this.createItemElement(item, depth);
-            this.container.appendChild(element);
+    buildHTML(items, depth, parts, pendingLoads) {
+        for (const item of items) {
+            const isExpanded = item.isDir && state.isFolderExpanded(item.path);
+            const selected = state.selectedPath === item.path ? ' selected' : '';
+            const type = item.isDir ? 'folder' : 'file';
+            const escapedPath = item.path.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+            const escapedName = item.name.replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
-            // Render children if folder is expanded
-            if (item.isDir && state.isFolderExpanded(item.path)) {
-                if (item.children && item.children.length > 0) {
-                    this.renderItems(item.children, depth + 1);
-                } else {
-                    // Load children if not yet loaded
-                    this.loadChildren(item.path, depth + 1);
+            let arrow;
+            if (item.isDir) {
+                arrow = `<span class="tree-arrow${isExpanded ? ' expanded' : ''}">▶</span>`;
+            } else {
+                arrow = '<span class="tree-arrow hidden"></span>';
+            }
+
+            parts.push(`<div class="tree-item ${type}${selected}" data-depth="${depth}" data-path="${escapedPath}">${arrow}<span class="tree-icon ${this.getIconClass(item)}"></span><span class="tree-name">${escapedName}</span></div>`);
+
+            if (isExpanded) {
+                if (item.children === null || item.children === undefined) {
+                    // Not yet loaded
+                    pendingLoads.push(item.path);
+                } else if (item.children.length > 0) {
+                    this.buildHTML(item.children, depth + 1, parts, pendingLoads);
                 }
+                // empty array = loaded but empty, do nothing
             }
-        });
-    }
-
-    createItemElement(item, depth) {
-        const element = document.createElement('div');
-        element.className = `tree-item ${item.isDir ? 'folder' : 'file'}`;
-        element.dataset.depth = depth;
-        element.dataset.path = item.path;
-
-        if (state.selectedPath === item.path) {
-            element.classList.add('selected');
         }
-
-        // Arrow for folders
-        const arrow = document.createElement('span');
-        arrow.className = 'tree-arrow';
-        if (item.isDir) {
-            arrow.textContent = '▶';
-            if (state.isFolderExpanded(item.path)) {
-                arrow.classList.add('expanded');
-            }
-        } else {
-            arrow.classList.add('hidden');
-        }
-
-        // Icon
-        const icon = document.createElement('span');
-        icon.className = `tree-icon ${this.getIconClass(item)}`;
-
-        // Name
-        const name = document.createElement('span');
-        name.className = 'tree-name';
-        name.textContent = item.name;
-
-        element.appendChild(arrow);
-        element.appendChild(icon);
-        element.appendChild(name);
-
-        // Click handler
-        element.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.handleItemClick(item);
-        });
-
-        // Double click for files
-        element.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            if (!item.isDir) {
-                this.openFile(item.path);
-            }
-        });
-
-        // Context menu
-        element.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            this.showContextMenu(e, item);
-        });
-
-        return element;
     }
 
     getIconClass(item) {
@@ -160,9 +173,10 @@ class FileTreeComponent {
         state.setSelectedPath(item.path);
 
         if (item.isDir) {
+            // If expanding and children already loaded, toggleFolder's render is enough
+            // If children not loaded, toggleFolder renders (shows empty), then loadChildren renders with data
             state.toggleFolder(item.path);
-            // Load children if expanding
-            if (state.isFolderExpanded(item.path)) {
+            if (state.isFolderExpanded(item.path) && (item.children === null || item.children === undefined)) {
                 this.loadChildren(item.path, 0);
             }
         } else {
@@ -245,6 +259,8 @@ class FileTreeComponent {
         menu.style.top = `${event.clientY}px`;
 
         const menuItems = [
+            { icon: '📋', label: '複製路徑', action: () => this.copyPath(item) },
+            { separator: true },
             { icon: '📄', label: '新增檔案', action: () => this.createFile(item) },
             { icon: '📁', label: '新增資料夾', action: () => this.createFolder(item) },
             { separator: true },
@@ -297,8 +313,52 @@ class FileTreeComponent {
     }
 
     rename(item) {
-        // TODO: Implement rename dialog
-        console.log('Rename:', item.path);
+        const element = this.container.querySelector(`[data-path="${CSS.escape(item.path)}"]`);
+        if (!element) return;
+        const nameSpan = element.querySelector('.tree-name');
+        if (!nameSpan) return;
+        const originalName = item.name;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = originalName;
+        input.style.cssText = 'width:calc(100% - 40px);padding:1px 4px;font-size:inherit;background:var(--bg-primary);border:1px solid var(--accent);color:var(--text-primary);outline:none;border-radius:2px;';
+        nameSpan.style.display = 'none';
+        nameSpan.parentNode.appendChild(input);
+        input.focus();
+        if (!item.isDir && originalName.includes('.')) input.setSelectionRange(0, originalName.lastIndexOf('.'));
+        else input.select();
+        let done = false;
+        const finish = async () => {
+            if (done) return;
+            done = true;
+            const newName = input.value.trim();
+            input.remove();
+            nameSpan.style.display = '';
+            if (newName && newName !== originalName) {
+                const parentPath = item.path.substring(0, item.path.lastIndexOf('\\\\'));
+                const newPath = parentPath + '\\\\' + newName;
+                const result = await window.__TAURI__.core.invoke('rename_path', { oldPath: item.path, newPath: newPath });
+                if (result.success && state.projectPath) this.loadDirectory(state.projectPath);
+            }
+        };
+        input.addEventListener('blur', finish);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            else if (e.key === 'Escape') { input.value = originalName; input.blur(); }
+        });
+    }
+
+    async copyPath(item) {
+        try {
+            await navigator.clipboard.writeText(item.path);
+            const el = this.container.querySelector(`[data-path="${CSS.escape(item.path)}"]`);
+            if (el) {
+                el.style.background = 'var(--accent)';
+                setTimeout(() => { el.style.background = ''; }, 200);
+            }
+        } catch (e) {
+            console.error('Copy failed:', e);
+        }
     }
 
     async delete(item) {
@@ -322,3 +382,4 @@ class FileTreeComponent {
 
 // Initialize file tree component
 let fileTree;
+

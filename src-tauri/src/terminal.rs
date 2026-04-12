@@ -1,16 +1,17 @@
 //! Terminal management module using portable-pty
 //!
 //! Uses portable-pty for proper PTY support on Windows (via ConPTY).
-//! Based on expert recommendations for terminal emulation.
+//! Event-driven output: PTY reader pushes data to frontend via Tauri events.
 
 use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread;
+use tauri::{AppHandle, Emitter};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -42,6 +43,21 @@ impl ShellType {
     }
 }
 
+/// Event payload for terminal output pushed to frontend
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalOutputEvent {
+    pub terminal_id: String,
+    pub data: String,
+}
+
+/// Event payload for terminal exit notification
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalExitEvent {
+    pub terminal_id: String,
+}
+
 /// Commands that can be sent to a terminal thread
 enum TerminalCommand {
     Write(Vec<u8>),
@@ -56,20 +72,24 @@ pub struct TerminalHandle {
     #[allow(dead_code)]
     pub shell_type: ShellType,
     command_tx: Sender<TerminalCommand>,
-    output_rx: Receiver<Vec<u8>>,
     alive: Arc<Mutex<bool>>,
 }
 
 impl TerminalHandle {
-    fn new(id: String, shell_type: ShellType, cwd: Option<String>) -> anyhow::Result<Self> {
+    fn new(
+        id: String,
+        shell_type: ShellType,
+        cwd: Option<String>,
+        app_handle: AppHandle,
+    ) -> anyhow::Result<Self> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<TerminalCommand>();
-        let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>();
         let alive = Arc::new(Mutex::new(true));
         let alive_clone = Arc::clone(&alive);
 
         let shell_exe = shell_type.executable().to_string();
         let shell_args: Vec<String> = shell_type.args().iter().map(|s| s.to_string()).collect();
         let cwd_clone = cwd.clone();
+        let terminal_id = id.clone();
 
         // Spawn terminal in a dedicated thread
         thread::spawn(move || {
@@ -136,12 +156,13 @@ impl TerminalHandle {
 
             let mut writer = pair.master.take_writer().unwrap();
 
-            // Output reader thread - uses raw byte read (NOT line buffered!)
-            let out_tx_clone = out_tx.clone();
+            // Output reader thread - pushes data to frontend via Tauri events
             let alive_reader = Arc::clone(&alive_clone);
+            let emit_handle = app_handle.clone();
+            let emit_terminal_id = terminal_id.clone();
             thread::spawn(move || {
                 // Use small buffer for responsive output
-                let mut buffer = [0u8; 1024];
+                let mut buffer = [0u8; 4096];
                 loop {
                     if !*alive_reader.lock() {
                         break;
@@ -153,11 +174,15 @@ impl TerminalHandle {
                             break;
                         }
                         Ok(n) => {
-                            eprintln!("[PTY Reader] Read {} bytes", n);
-                            // Send raw bytes immediately - don't buffer!
-                            if out_tx_clone.send(buffer[..n].to_vec()).is_err() {
-                                break;
-                            }
+                            // Convert to string and emit event to frontend immediately
+                            let data = String::from_utf8_lossy(&buffer[..n]).to_string();
+                            let _ = emit_handle.emit(
+                                "terminal-output",
+                                TerminalOutputEvent {
+                                    terminal_id: emit_terminal_id.clone(),
+                                    data,
+                                },
+                            );
                         }
                         Err(e) => {
                             eprintln!("[PTY Reader] Error: {}", e);
@@ -166,6 +191,13 @@ impl TerminalHandle {
                     }
                 }
                 *alive_reader.lock() = false;
+                // Notify frontend that this terminal has exited
+                let _ = emit_handle.emit(
+                    "terminal-exit",
+                    TerminalExitEvent {
+                        terminal_id: emit_terminal_id.clone(),
+                    },
+                );
                 eprintln!("[PTY Reader] Thread exiting");
             });
 
@@ -173,7 +205,6 @@ impl TerminalHandle {
             loop {
                 match cmd_rx.recv() {
                     Ok(TerminalCommand::Write(data)) => {
-                        eprintln!("[PTY Thread] Writing {} bytes", data.len());
                         if let Err(e) = writer.write_all(&data) {
                             eprintln!("[PTY Thread] Write error: {}", e);
                             break;
@@ -210,7 +241,6 @@ impl TerminalHandle {
             {
                 if let Some(pid) = child.process_id() {
                     eprintln!("[PTY Thread] Killing process tree for PID: {}", pid);
-                    // Use taskkill /T /F to forcefully terminate the process and all its children
                     let _ = std::process::Command::new("taskkill")
                         .args(["/PID", &pid.to_string(), "/T", "/F"])
                         .creation_flags(0x08000000) // CREATE_NO_WINDOW
@@ -234,7 +264,6 @@ impl TerminalHandle {
             id,
             shell_type,
             command_tx: cmd_tx,
-            output_rx: out_rx,
             alive,
         })
     }
@@ -243,14 +272,6 @@ impl TerminalHandle {
         self.command_tx
             .send(TerminalCommand::Write(input.to_vec()))?;
         Ok(())
-    }
-
-    fn read(&self) -> Vec<u8> {
-        let mut output = Vec::new();
-        while let Ok(data) = self.output_rx.try_recv() {
-            output.extend(data);
-        }
-        output
     }
 
     fn resize(&self, cols: u16, rows: u16) -> anyhow::Result<()> {
@@ -284,6 +305,7 @@ impl TerminalManager {
         &self,
         shell_type: ShellType,
         cwd: Option<String>,
+        app_handle: AppHandle,
     ) -> anyhow::Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
         eprintln!(
@@ -291,7 +313,7 @@ impl TerminalManager {
             id, shell_type
         );
 
-        let handle = TerminalHandle::new(id.clone(), shell_type, cwd)?;
+        let handle = TerminalHandle::new(id.clone(), shell_type, cwd, app_handle)?;
         self.sessions.lock().insert(id.clone(), handle);
 
         eprintln!("[TerminalManager] Terminal {} created successfully", id);
@@ -302,17 +324,6 @@ impl TerminalManager {
         let sessions = self.sessions.lock();
         if let Some(handle) = sessions.get(id) {
             handle.write(input.as_bytes())
-        } else {
-            Err(anyhow::anyhow!("Terminal not found: {}", id))
-        }
-    }
-
-    pub fn read_from_terminal(&self, id: &str) -> anyhow::Result<String> {
-        let sessions = self.sessions.lock();
-        if let Some(handle) = sessions.get(id) {
-            let bytes = handle.read();
-            // Convert to string, replacing invalid UTF-8
-            Ok(String::from_utf8_lossy(&bytes).to_string())
         } else {
             Err(anyhow::anyhow!("Terminal not found: {}", id))
         }
@@ -341,7 +352,6 @@ impl TerminalManager {
         self.sessions.lock().keys().cloned().collect()
     }
 
-    #[allow(dead_code)]
     pub fn resize_terminal(&self, id: &str, cols: u16, rows: u16) -> anyhow::Result<()> {
         let sessions = self.sessions.lock();
         if let Some(handle) = sessions.get(id) {
