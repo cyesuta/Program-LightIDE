@@ -140,6 +140,8 @@ pub fn send_message(
     cwd: Option<&str>,
     workspace_id: Option<&str>,
     session_id: Option<&str>,
+    model: Option<&str>,
+    prompt_mode: Option<&str>,
 ) -> Result<(), String> {
     ensure_sidecar(app)?;
 
@@ -151,6 +153,8 @@ pub fn send_message(
         "cwd": cwd,
         "workspaceId": workspace_id.unwrap_or("default"),
         "sessionId": session_id,
+        "model": model,
+        "promptMode": prompt_mode,
     });
 
     if let Some(tx) = &claude.stdin_tx {

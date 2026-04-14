@@ -957,6 +957,34 @@
     text-align: center;
 }
 
+/* Per-turn stats footer */
+.claude-turn-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 6px 12px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-muted);
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    background: rgba(255, 255, 255, 0.02);
+    user-select: text;
+}
+
+.claude-turn-stats .stat-item {
+    white-space: nowrap;
+}
+
+.claude-turn-stats .stat-item:first-child {
+    color: var(--success);
+}
+
+.claude-turn-stats .stats-aborted {
+    color: var(--warning);
+    margin-left: auto;
+}
+
 /* Tool Blocks */
 .claude-tool-block {
     background: var(--bg-secondary);
@@ -1005,6 +1033,235 @@
 .tool-status.error {
     color: var(--error);
     background: rgba(244, 71, 71, 0.1);
+}
+
+.tool-status.bg-running {
+    color: var(--info);
+    background: rgba(79, 193, 255, 0.12);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Background bash block — distinct visual */
+.claude-tool-block.bg-bash-block {
+    border-color: var(--info);
+    box-shadow: 0 0 0 1px rgba(79, 193, 255, 0.2);
+}
+
+.claude-tool-block.bg-bash-block .tool-header {
+    background: rgba(79, 193, 255, 0.08);
+}
+
+.bg-bash-toggle {
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    color: var(--text-accent);
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+}
+
+.bg-bash-toggle:hover {
+    background: var(--bg-hover);
+}
+
+.bg-bash-log {
+    margin: 0;
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    user-select: text;
+    cursor: text;
+}
+
+/* Todo list (TodoWrite tool) */
+.todo-list {
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--bg-primary);
+    user-select: text;
+}
+
+.todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 2px 0;
+}
+
+.todo-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.todo-text {
+    flex: 1;
+    word-break: break-word;
+}
+
+.todo-item.todo-done .todo-text {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.todo-item.todo-active .todo-text {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.todo-item.todo-pending .todo-text {
+    color: var(--text-secondary);
+}
+
+/* Custom confirm modal */
+.claude-confirm-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    backdrop-filter: blur(2px);
+    animation: fadeIn 0.15s ease;
+}
+
+.claude-confirm-content {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 24px;
+    min-width: 360px;
+    max-width: 480px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    animation: confirmPop 0.2s ease;
+}
+
+@keyframes confirmPop {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.claude-confirm-icon {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.claude-confirm-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.claude-confirm-body {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    user-select: text;
+}
+
+.claude-confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.claude-confirm-actions button {
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: all 0.15s;
+    min-width: 80px;
+}
+
+.claude-confirm-cancel {
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+}
+
+.claude-confirm-cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.claude-confirm-ok {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+    font-weight: 600;
+}
+
+.claude-confirm-ok:hover {
+    background: var(--accent-hover);
+}
+
+.claude-confirm-ok:focus {
+    outline: 2px solid var(--accent-light);
+    outline-offset: 2px;
+}
+
+/* Compact context primer */
+.claude-context-primer {
+    background: rgba(79, 193, 255, 0.06);
+    border: 1px dashed var(--info);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 4px 0;
+    user-select: text;
+}
+
+.primer-header {
+    font-size: 13px;
+    color: var(--info);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.primer-body {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Quick action buttons (commit, changelog) */
+.claude-quick-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-accent);
+    border-color: var(--accent);
+    flex: 1;
+    font-size: 13px;
+    padding: 5px 10px;
+}
+
+.claude-quick-btn:hover {
+    background: var(--accent);
+    color: white;
 }
 
 .tool-input {
@@ -1232,14 +1489,35 @@
 }
 
 .claude-action-btn {
-    padding: 3px 8px;
+    padding: 4px 10px;
     border: 1px solid var(--border);
     background: var(--bg-primary);
     color: var(--text-secondary);
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 14px;
     cursor: pointer;
     transition: all 0.15s;
+}
+
+.claude-model-select {
+    padding: 3px 8px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+}
+
+.claude-model-select:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.claude-model-select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 .claude-action-btn:hover {

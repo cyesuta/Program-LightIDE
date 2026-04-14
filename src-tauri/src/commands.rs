@@ -156,6 +156,8 @@ pub async fn claude_send_message(
     cwd: Option<String>,
     workspace_id: Option<String>,
     session_id: Option<String>,
+    model: Option<String>,
+    prompt_mode: Option<String>,
 ) -> CommandResult<()> {
     match crate::claude::send_message(
         &app,
@@ -163,6 +165,8 @@ pub async fn claude_send_message(
         cwd.as_deref(),
         workspace_id.as_deref(),
         session_id.as_deref(),
+        model.as_deref(),
+        prompt_mode.as_deref(),
     ) {
         Ok(_) => CommandResult::ok(()),
         Err(e) => CommandResult::err(&e),

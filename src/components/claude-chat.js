@@ -24,7 +24,8 @@ class ClaudeWorkspaceView {
         this.currentAssistantEl = null;
         this.thinkingEl = null;
         this.pendingTools = new Map();
-        this.totalTokens = { input: 0, output: 0 };
+        // Tokens broken down: input=new (full price), cache=cached (10% price), output
+        this.totalTokens = { input: 0, cache: 0, output: 0, cost: 0 };
         this.startTime = null;
         this.timerInterval = null;
     }
@@ -87,8 +88,29 @@ class ClaudeChatComponent {
                     <button class="claude-send-btn" id="claudeSendBtn" title="送出 (Enter)">▶</button>
                 </div>
                 <div class="claude-actions">
-                    <button class="claude-action-btn" id="claudeResetBtn" title="新對話">🔄 新對話</button>
+                    <select class="claude-model-select" id="claudeModelSelect" title="選擇模型">
+                        <optgroup label="4.5 系列">
+                            <option value="claude-sonnet-4-5">Sonnet 4.5</option>
+                            <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
+                            <option value="claude-opus-4-5">Opus 4.5</option>
+                        </optgroup>
+                        <optgroup label="4.6 系列">
+                            <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                            <option value="claude-opus-4-6">Opus 4.6</option>
+                        </optgroup>
+                    </select>
+                    <select class="claude-model-select" id="claudePromptMode" title="System Prompt 模式">
+                        <option value="minimal">省 token (簡化 prompt)</option>
+                        <option value="full">完整 (含 CLAUDE.md/hooks)</option>
+                    </select>
+                    <button class="claude-action-btn" id="claudeResetBtn" title="重置對話 (清除 session)">🔄 新對話</button>
+                    <button class="claude-action-btn" id="claudeClearBtn" title="清空顯示 (保留最後 2 輪，session 不變)">🧹 清空</button>
+                    <button class="claude-action-btn" id="claudeCompactBtn" title="壓縮目前對話為摘要並開新 session">📦 打包重開</button>
                     <button class="claude-action-btn claude-abort-btn" id="claudeAbortBtn" title="中止" style="display:none;">⏹ 中止</button>
+                </div>
+                <div class="claude-actions">
+                    <button class="claude-action-btn claude-quick-btn" id="claudeCommitBtn" title="git add/commit/push (使用 Haiku 4.5)">📤 Commit + Push</button>
+                    <button class="claude-action-btn claude-quick-btn" id="claudeChangelogBtn" title="記錄到 CHANGELOG.md (使用 Haiku 4.5)">📋 記錄 Changelog</button>
                 </div>
             </div>
         `;
@@ -119,7 +141,39 @@ class ClaudeChatComponent {
 
         this.sendBtn.addEventListener('click', () => this.send());
         this.container.querySelector('#claudeResetBtn').addEventListener('click', () => this.reset());
+        this.container.querySelector('#claudeClearBtn').addEventListener('click', () => this.clearDisplay());
+        this.container.querySelector('#claudeCompactBtn').addEventListener('click', () => this.compactContext());
         this.container.querySelector('#claudeAbortBtn').addEventListener('click', () => this.abort());
+
+        // Model selector — persist to localStorage
+        this.modelSelect = this.container.querySelector('#claudeModelSelect');
+        const savedModel = localStorage.getItem('lightide-claude-model');
+        if (savedModel) this.modelSelect.value = savedModel;
+        this.modelSelect.addEventListener('change', () => {
+            localStorage.setItem('lightide-claude-model', this.modelSelect.value);
+        });
+
+        // Prompt mode selector — persist
+        this.promptModeSelect = this.container.querySelector('#claudePromptMode');
+        const savedMode = localStorage.getItem('lightide-claude-prompt-mode');
+        if (savedMode) this.promptModeSelect.value = savedMode;
+        this.promptModeSelect.addEventListener('change', () => {
+            localStorage.setItem('lightide-claude-prompt-mode', this.promptModeSelect.value);
+        });
+
+        // Quick action buttons (forced Haiku 4.5)
+        this.container.querySelector('#claudeCommitBtn').addEventListener('click', () => {
+            this.sendQuick(
+                '請執行 git add . && git commit && git push。先 git status 看看改了什麼，根據 diff 寫一個簡潔的 commit message (中文，描述 why 而非 what)，然後 push 到 origin。',
+                'claude-haiku-4-5-20251001'
+            );
+        });
+        this.container.querySelector('#claudeChangelogBtn').addEventListener('click', () => {
+            this.sendQuick(
+                '請更新 CHANGELOG.md。先看一下最近的 git log 和未提交的改動，然後在 CHANGELOG.md 適當位置加入今日的更新項目（用中文，簡潔描述變更）。',
+                'claude-haiku-4-5-20251001'
+            );
+        });
 
         // Event delegation: double-click any file path to open it in editor
         this.messagesWrapper.addEventListener('dblclick', (e) => {
@@ -208,11 +262,23 @@ class ClaudeChatComponent {
             this.timerEl.textContent = '';
         }
 
-        if (view.totalTokens.output > 0 || view.totalTokens.input > 0) {
-            this.tokensEl.textContent = `↓${view.totalTokens.input} ↑${view.totalTokens.output}`;
+        const t = view.totalTokens;
+        if (t.output > 0 || t.input > 0 || t.cache > 0) {
+            const parts = [];
+            if (t.input > 0) parts.push(`↓${this.formatTokens(t.input)}`);
+            if (t.cache > 0) parts.push(`💾${this.formatTokens(t.cache)}`);
+            if (t.output > 0) parts.push(`↑${this.formatTokens(t.output)}`);
+            if (t.cost > 0) parts.push(`$${t.cost.toFixed(4)}`);
+            this.tokensEl.textContent = parts.join(' ');
         } else {
             this.tokensEl.textContent = '';
         }
+    }
+
+    formatTokens(n) {
+        if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+        return n.toString();
     }
 
     updateButtonState() {
@@ -225,15 +291,57 @@ class ClaudeChatComponent {
 
     // ========== Send ==========
 
+    async sendQuick(message, forcedModel) {
+        // Send a pre-defined message with a forced model (used by quick action buttons)
+        const view = this.getActiveView();
+        const workspaceId = this.activeWorkspaceId;
+        if (!view || !workspaceId || view.isProcessing) return;
+
+        this.addUserMessage(view, message);
+        view.isProcessing = true;
+        view.currentAssistantEl = null;
+        view.pendingTools.clear();
+        this.showThinking(view);
+        view.startTimer(() => {
+            if (this.activeWorkspaceId === view.workspaceId) this.refreshStatusBar();
+        });
+        this.updateButtonState();
+
+        try {
+            const cwd = state?.projectPath || null;
+            const ws = workspaceManager?.workspaces?.find(w => w.id === workspaceId);
+            const sessionId = ws?.claudeSessionId || null;
+            const promptMode = this.promptModeSelect?.value || 'minimal';
+            await window.__TAURI__.core.invoke('claude_send_message', {
+                message, cwd, workspaceId, sessionId,
+                model: forcedModel,
+                promptMode,
+            });
+        } catch (error) {
+            this.hideThinking(view);
+            this.addSystemMessage(view, '錯誤: ' + (error.message || error));
+            view.isProcessing = false;
+            view.stopTimer();
+            this.updateButtonState();
+        }
+    }
+
     async send() {
-        const message = this.inputEl.value.trim();
+        const userInput = this.inputEl.value.trim();
         const workspaceId = this.activeWorkspaceId;
         if (!workspaceId) return;
 
         const view = this.getActiveView();
-        if (!message || view.isProcessing) return;
+        if (!userInput || view.isProcessing) return;
 
-        this.addUserMessage(view, message);
+        // If we have a prior summary from compact, prepend it to the message (one-time)
+        let message = userInput;
+        if (view._priorSummary) {
+            message = `[從前次對話的摘要繼續]\n${view._priorSummary}\n\n[使用者新訊息]\n${userInput}`;
+            view._priorSummary = null;
+        }
+
+        this.addUserMessage(view, userInput);
         this.inputEl.value = '';
         this.inputEl.style.height = 'auto';
 
@@ -255,7 +363,9 @@ class ClaudeChatComponent {
             // Get saved session_id from workspace for resume across restarts
             const ws = workspaceManager?.workspaces?.find(w => w.id === workspaceId);
             const sessionId = ws?.claudeSessionId || null;
-            await window.__TAURI__.core.invoke('claude_send_message', { message, cwd, workspaceId, sessionId });
+            const model = this.modelSelect?.value || null;
+            const promptMode = this.promptModeSelect?.value || 'minimal';
+            await window.__TAURI__.core.invoke('claude_send_message', { message, cwd, workspaceId, sessionId, model, promptMode });
         } catch (error) {
             this.hideThinking(view);
             this.addSystemMessage(view, '錯誤: ' + (error.message || error));
@@ -302,23 +412,63 @@ class ClaudeChatComponent {
             case 'tool_result': {
                 const toolEl = view.pendingTools.get(data.id);
                 if (toolEl) {
-                    const outputEl = toolEl.querySelector('.tool-output');
-                    const statusEl = toolEl.querySelector('.tool-status');
-                    if (data.output && outputEl) {
-                        const truncated = data.output.length > 8000;
-                        const text = truncated ? data.output.substring(0, 8000) : data.output;
-                        outputEl.innerHTML = `<pre>${this.esc(text)}</pre>`;
-                        if (truncated) outputEl.innerHTML += '<div class="tool-truncated">... (已截斷)</div>';
-                        outputEl.style.display = 'block';
-                    }
-                    if (statusEl) {
-                        statusEl.innerHTML = data.is_error ? '✗ 錯誤' : '✓ 完成';
-                        statusEl.className = 'tool-status ' + (data.is_error ? 'error' : 'done');
+                    // If this is a background bash, capture bash_id from the output
+                    // (Claude Code returns: "Started ... bash_id: <id>" or similar)
+                    if (toolEl.dataset.bgBash === '1' && !toolEl.dataset.bashId && data.output) {
+                        const m = data.output.match(/bash_(\d+)/);
+                        if (m) toolEl.dataset.bashId = `bash_${m[1]}`;
                     }
 
-                    // Auto-reload file in editor if it was a file edit and successful
-                    if (!data.is_error && toolEl.dataset.filePath && typeof editor !== 'undefined') {
-                        editor.reloadFile(toolEl.dataset.filePath);
+                    // If this tool_result was routed to a parent bg bash block (via BashOutput),
+                    // append to its streaming log instead of replacing
+                    const isAppend = toolEl.dataset.bgBash === '1' && toolEl.dataset.streamLog === '1';
+                    if (isAppend && data.output) {
+                        const logEl = toolEl.querySelector('.bg-bash-log');
+                        if (logEl) {
+                            logEl.textContent += '\n--- ' + new Date().toLocaleTimeString() + ' ---\n' + data.output;
+                            logEl.scrollTop = logEl.scrollHeight;
+                        }
+                    } else {
+                        const outputEl = toolEl.querySelector('.tool-output');
+                        const statusEl = toolEl.querySelector('.tool-status');
+                        if (data.output && outputEl) {
+                            const truncated = data.output.length > 8000;
+                            const text = truncated ? data.output.substring(0, 8000) : data.output;
+                            // For background bash, set up an expandable streaming log
+                            if (toolEl.dataset.bgBash === '1') {
+                                toolEl.dataset.streamLog = '1';
+                                outputEl.innerHTML = `
+                                    <div class="bg-bash-toggle">▼ 即時輸出 (點擊切換)</div>
+                                    <pre class="bg-bash-log">${this.esc(text)}</pre>
+                                `;
+                                outputEl.style.display = 'block';
+                                const toggle = outputEl.querySelector('.bg-bash-toggle');
+                                const log = outputEl.querySelector('.bg-bash-log');
+                                toggle.addEventListener('click', () => {
+                                    const open = log.style.display !== 'none';
+                                    log.style.display = open ? 'none' : 'block';
+                                    toggle.textContent = (open ? '▶' : '▼') + ' 即時輸出 (點擊切換)';
+                                });
+                            } else {
+                                outputEl.innerHTML = `<pre>${this.esc(text)}</pre>`;
+                                if (truncated) outputEl.innerHTML += '<div class="tool-truncated">... (已截斷)</div>';
+                                outputEl.style.display = 'block';
+                            }
+                        }
+                        if (statusEl) {
+                            if (toolEl.dataset.bgBash === '1' && !data.is_error) {
+                                statusEl.innerHTML = '🔄 背景執行中';
+                                statusEl.className = 'tool-status bg-running';
+                            } else {
+                                statusEl.innerHTML = data.is_error ? '✗ 錯誤' : '✓ 完成';
+                                statusEl.className = 'tool-status ' + (data.is_error ? 'error' : 'done');
+                            }
+                        }
+
+                        // Auto-reload file in editor if it was a file edit and successful
+                        if (!data.is_error && toolEl.dataset.filePath && typeof editor !== 'undefined') {
+                            editor.reloadFile(toolEl.dataset.filePath);
+                        }
                     }
 
                     view.pendingTools.delete(data.id);
@@ -328,7 +478,8 @@ class ClaudeChatComponent {
             }
 
             case 'usage':
-                view.totalTokens.input += (data.input_tokens || 0) + (data.cache_read || 0) + (data.cache_create || 0);
+                view.totalTokens.input += data.input_tokens || 0;
+                view.totalTokens.cache += (data.cache_read || 0) + (data.cache_create || 0);
                 view.totalTokens.output += data.output_tokens || 0;
                 if (this.activeWorkspaceId === workspaceId) this.refreshStatusBar();
                 break;
@@ -338,16 +489,20 @@ class ClaudeChatComponent {
                 view.stopTimer();
                 view.isProcessing = false;
                 view.currentAssistantEl = null;
-                if (data.cost && this.activeWorkspaceId === workspaceId) {
-                    this.tokensEl.textContent += ` · $${data.cost.toFixed(4)}`;
-                }
                 this.hideThinking(view);
+
+                // Append per-turn stats footer (also accumulates cost into totalTokens)
+                this.addTurnStats(view, data);
+
                 if (this.activeWorkspaceId === workspaceId) {
                     this.refreshStatusBar();
                     this.updateButtonState();
                 }
-                // Persist chat HTML for cross-restart restore
-                if (workspaceManager) {
+
+                // If this was a compact request, finish the compact flow
+                if (view._compactPending) {
+                    this.finishCompact(view, workspaceId);
+                } else if (workspaceManager) {
                     workspaceManager.saveChatHTML(workspaceId, view.messagesEl.innerHTML, view.totalTokens);
                 }
                 break;
@@ -400,16 +555,38 @@ class ClaudeChatComponent {
     addToolUseBlock(view, block) {
         view.currentAssistantEl = null;
 
+        // Special handling for BashOutput: instead of a new block, route
+        // its result into the parent background bash block (if found).
+        if (block.name === 'BashOutput' && block.input?.bash_id) {
+            // Just track this id so when tool_result arrives, we can route it
+            const bashId = block.input.bash_id;
+            const parentEl = view.messagesEl.querySelector(`[data-bash-id="${this.esc(bashId)}"]`);
+            if (parentEl) {
+                // Mark the pending tool to route output to parent
+                if (block.id) view.pendingTools.set(block.id, parentEl);
+                this.scrollToBottom(view);
+                return;
+            }
+            // If parent not found, fall through and render normally
+        }
+
         const toolEl = document.createElement('div');
         toolEl.className = 'claude-tool-block';
 
         const toolName = block.name || 'Tool';
         const isFileEdit = ['Edit', 'Write', 'MultiEdit'].includes(toolName);
+        const isBgBash = toolName === 'Bash' && block.input?.run_in_background === true;
 
         // Track file path on the element for auto-reload after tool_result
         if (isFileEdit && block.input?.file_path) {
             toolEl.dataset.filePath = block.input.file_path;
             toolEl.dataset.toolName = toolName;
+        }
+
+        // Mark background bash blocks
+        if (isBgBash) {
+            toolEl.classList.add('bg-bash-block');
+            toolEl.dataset.bgBash = '1';
         }
 
         // Build input display
@@ -427,6 +604,8 @@ class ClaudeChatComponent {
         } else if (toolName === 'Write' && block.input?.content !== undefined) {
             // Render placeholder; will asynchronously fetch old content and replace
             inputBody = `<div class="tool-diff" data-write-placeholder="1">${this.renderWriteDiff(block.input.file_path, '', block.input.content, true)}</div>`;
+        } else if ((toolName === 'TodoWrite' || toolName === 'Todo') && Array.isArray(block.input?.todos)) {
+            inputBody = this.renderTodos(block.input.todos);
         } else {
             // Default: show input as text
             let inputDisplay = '';
@@ -509,6 +688,19 @@ class ClaudeChatComponent {
         return `<div class="diff-block">${parts.join('')}</div>`;
     }
 
+    renderTodos(todos) {
+        const items = todos.map(t => {
+            const status = t.status || 'pending';
+            let icon = '⬜';
+            let cls = 'todo-pending';
+            if (status === 'completed') { icon = '✅'; cls = 'todo-done'; }
+            else if (status === 'in_progress') { icon = '🔄'; cls = 'todo-active'; }
+            const text = status === 'in_progress' && t.activeForm ? t.activeForm : (t.content || '');
+            return `<div class="todo-item ${cls}"><span class="todo-icon">${icon}</span><span class="todo-text">${this.esc(text)}</span></div>`;
+        }).join('');
+        return `<div class="todo-list">${items}</div>`;
+    }
+
     renderWriteDiff(filePath, oldContent, newContent, isNewFile) {
         const label = isNewFile ? '(新建)' : '(覆寫)';
         const fileLine = filePath ? `<div class="diff-file file-clickable" data-file-path="${this.esc(filePath)}" title="雙擊開啟">${this.esc(filePath)} <span class="diff-meta">${label}</span></div>` : '';
@@ -566,6 +758,37 @@ class ClaudeChatComponent {
         this.scrollToBottom(view);
     }
 
+    addTurnStats(view, data) {
+        // Track total cost
+        if (data.cost) view.totalTokens.cost += data.cost;
+
+        const duration = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) + 's' : '-';
+        const newIn = data.input_tokens || 0;
+        const cacheTokens = (data.cache_read_tokens || 0) + (data.cache_creation_tokens || 0);
+        const outTokens = data.output_tokens || 0;
+        const cost = data.cost ? `$${data.cost.toFixed(4)}` : '';
+        const turns = data.num_turns && data.num_turns > 1 ? `${data.num_turns} turns` : '';
+        const aborted = data.aborted ? '<span class="stats-aborted">已中止</span>' : '';
+
+        const parts = [`<span class="stat-item">⏱ ${duration}</span>`];
+
+        const tokenParts = [];
+        if (newIn > 0) tokenParts.push(`↓${this.formatTokens(newIn)}`);
+        if (cacheTokens > 0) tokenParts.push(`💾${this.formatTokens(cacheTokens)}`);
+        if (outTokens > 0) tokenParts.push(`↑${this.formatTokens(outTokens)}`);
+        if (tokenParts.length) parts.push(`<span class="stat-item" title="新輸入↓ / 快取💾 / 輸出↑">${tokenParts.join(' ')}</span>`);
+
+        if (cost) parts.push(`<span class="stat-item">${cost}</span>`);
+        if (turns) parts.push(`<span class="stat-item">${turns}</span>`);
+        if (aborted) parts.push(aborted);
+
+        const el = document.createElement('div');
+        el.className = 'claude-turn-stats';
+        el.innerHTML = parts.join('');
+        view.messagesEl.appendChild(el);
+        this.scrollToBottom(view);
+    }
+
     scrollToBottom(view) {
         view.messagesEl.scrollTop = view.messagesEl.scrollHeight;
     }
@@ -576,6 +799,147 @@ class ClaudeChatComponent {
         const workspaceId = this.activeWorkspaceId;
         if (!workspaceId) return;
         try { await window.__TAURI__.core.invoke('claude_abort_workspace', { workspaceId }); } catch (e) {}
+    }
+
+    showConfirm({ icon = '❓', title = '確認', body = '', confirmText = '確定', cancelText = '取消' }) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.className = 'claude-confirm-modal';
+            modal.innerHTML = `
+                <div class="claude-confirm-content">
+                    <div class="claude-confirm-icon">${icon}</div>
+                    <div class="claude-confirm-title">${this.esc(title)}</div>
+                    <div class="claude-confirm-body">${this.esc(body)}</div>
+                    <div class="claude-confirm-actions">
+                        <button class="claude-confirm-cancel">${this.esc(cancelText)}</button>
+                        <button class="claude-confirm-ok">${this.esc(confirmText)}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const cleanup = () => {
+                modal.remove();
+                document.removeEventListener('keydown', onKey);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') { cleanup(); resolve(false); }
+                if (e.key === 'Enter') { cleanup(); resolve(true); }
+            };
+
+            modal.querySelector('.claude-confirm-cancel').addEventListener('click', () => { cleanup(); resolve(false); });
+            modal.querySelector('.claude-confirm-ok').addEventListener('click', () => { cleanup(); resolve(true); });
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) { cleanup(); resolve(false); }
+            });
+            document.addEventListener('keydown', onKey);
+
+            // Focus the OK button
+            setTimeout(() => modal.querySelector('.claude-confirm-ok').focus(), 50);
+        });
+    }
+
+    async compactContext() {
+        const view = this.getActiveView();
+        const workspaceId = this.activeWorkspaceId;
+        if (!view || !workspaceId || view.isProcessing) return;
+
+        const ok = await this.showConfirm({
+            icon: '📦',
+            title: '打包重開',
+            body: '將請 Sonnet 4.5 壓縮目前對話為摘要，重置 session，並把摘要作為下次訊息的 context。\n\n注意：本次摘要請求會帶完整歷史 (token 消耗較高)，但之後對話會省很多。',
+            confirmText: '開始打包',
+        });
+        if (!ok) return;
+
+        // Mark this turn as a compact request — we'll capture the result on done
+        view._compactPending = true;
+
+        const summaryPrompt = `[壓縮對話] 請將我們目前為止的對話完整摘要，包含：
+1. 主要任務和目標
+2. 已完成的工作和重要決定
+3. 目前的進度和狀態
+4. 待處理或未解決的問題
+5. 重要的技術細節、檔案路徑、變數名稱
+
+請保持簡潔但完整，這份摘要會作為新 session 的起始 context。直接輸出摘要，不要任何前綴說明。`;
+
+        // Always use Sonnet 4.5 for summarization (good quality/cost balance)
+        await this.sendQuick(summaryPrompt, 'claude-sonnet-4-5');
+    }
+
+    async finishCompact(view, workspaceId) {
+        // Find the last assistant message text (the summary)
+        const allAssistant = view.messagesEl.querySelectorAll('.claude-msg-assistant');
+        const lastAssistant = allAssistant[allAssistant.length - 1];
+        if (!lastAssistant) {
+            view._compactPending = false;
+            return;
+        }
+        const summaryText = lastAssistant._rawText || lastAssistant.querySelector('.claude-msg-content')?.textContent || '';
+
+        // Reset workspace session (clears sidecar session_id)
+        try {
+            await window.__TAURI__.core.invoke('claude_reset_workspace', { workspaceId });
+        } catch {}
+
+        // Clear workspace's sessionId so next send starts fresh
+        const ws = workspaceManager?.workspaces?.find(w => w.id === workspaceId);
+        if (ws) {
+            ws.claudeSessionId = null;
+            workspaceManager.save();
+        }
+
+        // Clear display
+        view.messagesEl.innerHTML = '';
+        view.totalTokens = { input: 0, cache: 0, output: 0, cost: 0 };
+        view.currentAssistantEl = null;
+        view.pendingTools.clear();
+
+        // Show the summary as a "context primer" message
+        const primerEl = document.createElement('div');
+        primerEl.className = 'claude-context-primer';
+        primerEl.innerHTML = `
+            <div class="primer-header">📦 已壓縮前次對話為以下摘要 (新 session 已建立)</div>
+            <div class="primer-body">${this.esc(summaryText)}</div>
+        `;
+        view.messagesEl.appendChild(primerEl);
+
+        // Store summary to prepend to next user message automatically
+        view._priorSummary = summaryText;
+
+        view._compactPending = false;
+        this.refreshStatusBar();
+        this.scrollToBottom(view);
+
+        // Persist
+        if (workspaceManager) {
+            workspaceManager.saveChatHTML(workspaceId, view.messagesEl.innerHTML, view.totalTokens);
+        }
+    }
+
+    clearDisplay() {
+        const view = this.getActiveView();
+        if (!view) return;
+
+        // Find all user messages (each marks the start of a turn)
+        const userMessages = view.messagesEl.querySelectorAll('.claude-msg-user');
+        if (userMessages.length <= 2) return; // Nothing to trim
+
+        // Keep from the 2nd-to-last user message onwards
+        const keepFrom = userMessages[userMessages.length - 2];
+
+        // Remove all previous siblings (everything before this user message)
+        while (keepFrom.previousSibling) {
+            keepFrom.previousSibling.remove();
+        }
+
+        // Persist the trimmed state
+        if (workspaceManager) {
+            workspaceManager.saveChatHTML(this.activeWorkspaceId, view.messagesEl.innerHTML, view.totalTokens);
+        }
+
+        this.scrollToBottom(view);
     }
 
     async reset() {

@@ -68,6 +68,31 @@
 
 ## 開發日誌
 
+### 2026-04-14
+- ✅ **Token 用量大幅優化 (省 token 模式)**
+  - **問題**: 預設 Claude Code preset system prompt ~21k tokens，每輪都要重送
+  - **解法**: 加入「省 token / 完整」模式切換器
+    - 省 token 模式：自訂 minimal system prompt (~500 tokens)
+    - 完整模式：用 `claude_code` preset，含 CLAUDE.md memory、hooks、slash commands
+  - **明確 SDK isolation**: `settingSources: []` 不載入任何 settings.json/plugins
+  - **預設停用 extended thinking**: `thinking: { type: "disabled" }` 省 output tokens
+  - **預設模型改為 Sonnet 4.5**: 比 Opus 便宜 5 倍
+- ✅ **模型選擇器**
+  - 下拉選單支援 Sonnet 4.5/4.6、Haiku 4.5、Opus 4.5/4.6
+  - 選擇持久化到 localStorage
+- ✅ **Token 顯示拆分**
+  - 區分新輸入 (↓)、快取 (💾)、輸出 (↑)、費用 ($)
+  - 修正之前把 cache_read 算入「輸入」造成的數字虛高
+- ✅ **每輪統計列**
+  - 每次回覆完成後在訊息下方顯示：耗時、token 細分、費用、turn 數
+- ✅ **清空顯示按鈕** (🧹)
+  - 只保留最後 2 輪對話，session 不變（不重置）
+  - 避免長對話 scrollbar 過長
+- ✅ **背景 Bash 特殊顯示**
+  - `run_in_background: true` 的 Bash 工具用藍色框 + 「🔄 背景執行中」狀態
+  - 即時輸出區域可點擊摺疊/展開
+  - BashOutput 工具呼叫的結果自動 append 到對應的 bash 區塊（依 bash_id 路由）
+
 ### 2026-04-12
 - ✅ **多工作區支援 (Workspace Tabs)**
   - 左下方新增工作區 tab bar，支援多個獨立工作區

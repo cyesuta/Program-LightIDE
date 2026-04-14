@@ -51,7 +51,30 @@ async function handleSend(cmd) {
             cwd: cmd.cwd || process.cwd(),
             permissionMode: "bypassPermissions",
             maxTurns: cmd.maxTurns || 50,
+            // Default to Sonnet 4.5 (cheaper and stable). Override via cmd.model.
+            model: cmd.model || "claude-sonnet-4-5",
+            // Disable extended thinking by default (saves output tokens)
+            thinking: { type: "disabled" },
+            // Explicit isolation: don't load any filesystem settings
+            // (no ~/.claude/settings.json, no .claude/settings.json, no plugins, no skills)
+            settingSources: [],
         };
+
+        // System prompt mode:
+        //   "minimal" (default): short custom prompt + restricted tools, fastest/cheapest
+        //   "full": use Claude Code preset + all tools, includes CLAUDE.md memory
+        const promptMode = cmd.promptMode || "minimal";
+        if (promptMode === "full") {
+            opts.systemPrompt = {
+                type: "preset",
+                preset: "claude_code",
+            };
+            // Full mode loads project settings for CLAUDE.md
+            opts.settingSources = ["project"];
+        } else {
+            opts.systemPrompt = `You are a helpful coding assistant integrated into LightIDE, a lightweight code editor. You can read, write, and edit files, run bash commands, and help the user with their code. Be concise and direct. The current working directory is the user's project.`;
+            // Allow all built-in tools (don't restrict)
+        }
 
         // Resume session: prefer explicit sessionId from frontend (survives sidecar restart),
         // fall back to in-memory tracked session
@@ -145,6 +168,8 @@ async function handleSend(cmd) {
                     num_turns: message.num_turns || 0,
                     input_tokens: message.usage?.input_tokens || 0,
                     output_tokens: message.usage?.output_tokens || 0,
+                    cache_read_tokens: message.usage?.cache_read_input_tokens || 0,
+                    cache_creation_tokens: message.usage?.cache_creation_input_tokens || 0,
                 });
             }
         }
