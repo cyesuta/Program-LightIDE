@@ -68,6 +68,25 @@
 
 ## 開發日誌
 
+### 2026-04-14 (背景 Bash 重導)
+- ✅ **canUseTool 攔截背景 Bash**：透過 SDK 的 `canUseTool` callback 攔截
+  `Bash(run_in_background: true)`，雙向 IPC (sidecar ⇄ frontend) 把指令
+  重導到 LightIDE 的 xterm.js 終端機 tab 執行。User 看到真正的即時串流
+  (不再靠 Claude 主動 poll)
+- ✅ **`allow + echo` 避免 Claude 重試**：攔截後用 `behavior: 'allow'` +
+  `updatedInput` 把指令換成廉價 `echo` 通知訊息，Claude 拿到「成功」的
+  tool_result 就不會再重跑一次
+- ✅ **`permissionMode: 'default'`**：從 `bypassPermissions` 改為 `default`
+  才能讓 `canUseTool` 被呼叫 (bypass 會跳過整個權限流程)
+- ✅ **Terminal 支援 log file**：`terminal.rs` 新增 `log_file` 參數，
+  PTY 輸出同步寫入指定檔案。背景任務用此機制讓 Claude 能 Read log
+- ✅ **新增 `claude_bg_response` Tauri command**：frontend spawn 成功後
+  把 response 寫回 sidecar stdin，完成雙向 IPC
+- ✅ **背景任務卡片**：Claude chat 顯示卡片含指令、log 路徑、切換到終端
+  按鈕、關閉 tab 按鈕
+- ✅ **自動切換模式**：背景 bash 啟動時自動切換到終端機模式，完成時自動
+  切回 Claude 模式 (監聽 `terminal-exit` 事件)
+
 ### 2026-04-14 (後續)
 - ✅ **Claude chat 圖片貼上**：輸入框支援 Ctrl+V 貼上圖片，縮圖預覽可移除，
   Sidecar 偵測圖片時自動切換 streaming input 模式，用 Anthropic content blocks

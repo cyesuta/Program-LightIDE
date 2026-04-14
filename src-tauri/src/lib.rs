@@ -34,6 +34,7 @@ pub fn run() {
             commands::claude_abort,
             commands::claude_abort_workspace,
             commands::claude_reset_workspace,
+            commands::claude_bg_response,
             // Terminal commands
             terminal_commands::create_terminal,
             terminal_commands::write_terminal,

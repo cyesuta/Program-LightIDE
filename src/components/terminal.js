@@ -4,10 +4,11 @@
  */
 
 class TerminalTab {
-    constructor(id, shellType, cwd) {
+    constructor(id, shellType, cwd, logFile = null) {
         this.id = id;
         this.shellType = shellType;
         this.cwd = cwd;
+        this.logFile = logFile;
         this.term = null;
         this.fitAddon = null;
         this.terminalId = null;
@@ -122,7 +123,8 @@ class TerminalTab {
 
             const result = await window.__TAURI__.core.invoke('create_terminal', {
                 shell: this.shellType,
-                cwd: this.cwd
+                cwd: this.cwd,
+                logFile: this.logFile
             });
 
             if (result.success) {
@@ -347,27 +349,66 @@ class TerminalComponent {
         }
     }
 
-    async createTab(shellType) {
+    async createTab(shellType, options = {}) {
         const tabId = `tab-${++this.tabIdCounter}`;
-        const cwd = state?.projectPath || null;
+        const cwd = options.cwd || state?.projectPath || null;
+        const logFile = options.logFile || null;
 
         console.log(`Creating terminal tab: ${tabId} with shell: ${shellType}`);
 
         // Create tab object
-        const tab = new TerminalTab(tabId, shellType, cwd);
+        const tab = new TerminalTab(tabId, shellType, cwd, logFile);
         this.tabs.set(tabId, tab);
 
         // Create tab button in tab bar
-        this.addTabButton(tabId, shellType);
+        this.addTabButton(tabId, shellType, options.label);
 
         // Initialize the terminal
         await tab.init(this.tabContent);
 
         // Switch to the new tab
         this.switchTab(tabId);
+
+        return tab;
     }
 
-    addTabButton(tabId, shellType) {
+    /**
+     * Create a background task terminal that auto-runs a command and logs to file.
+     * Returns { tabId, terminalId, logFile } for the sidecar response.
+     */
+    async createBgTaskTab(command, cwd) {
+        // Pick shell based on platform — Git Bash is best for `tee`
+        const shellType = 'gitbash';
+
+        // Build log file path
+        const timestamp = Date.now();
+        const logDir = cwd ? `${cwd}/.lightide/bg-logs` : null;
+        const logFile = logDir ? `${logDir}/bg_${timestamp}.log` : null;
+
+        // Create the tab (the Rust backend will handle log file creation)
+        const tab = await this.createTab(shellType, {
+            cwd,
+            logFile,
+            label: `⚡ ${command.substring(0, 20)}${command.length > 20 ? '...' : ''}`,
+        });
+
+        // Wait a bit for terminal to be ready, then send the command.
+        // Append `; exit` so the shell terminates when the command finishes,
+        // which fires the terminal-exit event so we can auto-switch back.
+        await new Promise(resolve => setTimeout(resolve, 800));
+        if (tab.isConnected) {
+            const wrapped = `${command}; exit\n`;
+            await tab.sendInput(wrapped);
+        }
+
+        return {
+            tabId: tab.id,
+            terminalId: tab.terminalId,
+            logFile,
+        };
+    }
+
+    addTabButton(tabId, shellType, customLabel) {
         const tabsContainer = document.getElementById('terminalTabs');
         if (!tabsContainer) return;
 
@@ -376,12 +417,13 @@ class TerminalComponent {
             'cmd': 'CMD',
             'gitbash': 'Bash'
         };
+        const label = customLabel || `${shellNames[shellType] || shellType} ${this.tabIdCounter}`;
 
         const tabBtn = document.createElement('div');
         tabBtn.className = 'terminal-tab';
         tabBtn.id = `btn-${tabId}`;
         tabBtn.innerHTML = `
-            <span class="tab-label">${shellNames[shellType] || shellType} ${this.tabIdCounter}</span>
+            <span class="tab-label">${label}</span>
             <button class="tab-close-btn" data-tab="${tabId}" title="關閉">×</button>
         `;
 

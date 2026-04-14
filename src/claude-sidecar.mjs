@@ -13,6 +13,8 @@ const rl = createInterface({ input: process.stdin });
 const sessions = new Map();
 // Abort controllers per workspace: workspaceId -> AbortController
 const aborts = new Map();
+// Pending bg task spawn requests: reqId -> {resolve, reject}
+const pendingBgSpawns = new Map();
 
 function send(obj) {
     process.stdout.write(JSON.stringify(obj) + "\n");
@@ -23,7 +25,6 @@ rl.on("line", (line) => {
     try { cmd = JSON.parse(line); } catch { return; }
 
     if (cmd.type === "send") {
-        // Fire-and-forget; multiple workspaces can run concurrently
         handleSend(cmd).catch(e => {
             send({ type: "error", workspaceId: cmd.workspaceId || "default", message: e.message || String(e) });
         });
@@ -35,8 +36,35 @@ rl.on("line", (line) => {
         const wid = cmd.workspaceId || "default";
         sessions.delete(wid);
         send({ type: "reset_done", workspaceId: wid });
+    } else if (cmd.type === "bg_spawn_response") {
+        const pending = pendingBgSpawns.get(cmd.reqId);
+        if (pending) {
+            pending.resolve(cmd);
+            pendingBgSpawns.delete(cmd.reqId);
+        }
     }
 });
+
+function requestBgSpawn(workspaceId, command, cwd) {
+    const reqId = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    send({
+        type: "bg_spawn_request",
+        workspaceId,
+        reqId,
+        command,
+        cwd,
+    });
+    return new Promise((resolve, reject) => {
+        pendingBgSpawns.set(reqId, { resolve, reject });
+        // 15 second timeout
+        setTimeout(() => {
+            if (pendingBgSpawns.has(reqId)) {
+                pendingBgSpawns.delete(reqId);
+                reject(new Error("Background task spawn timed out"));
+            }
+        }, 15000);
+    });
+}
 
 async function handleSend(cmd) {
     const workspaceId = cmd.workspaceId || "default";
@@ -49,13 +77,55 @@ async function handleSend(cmd) {
     try {
         const opts = {
             cwd: cmd.cwd || process.cwd(),
-            permissionMode: "bypassPermissions",
+            // NOTE: "default" so canUseTool is invoked; canUseTool allows everything
+            // except background Bash (which it intercepts and reroutes to terminal).
+            permissionMode: "default",
             maxTurns: cmd.maxTurns || 50,
             // Default to Sonnet 4.5 (cheaper and stable). Override via cmd.model.
             model: cmd.model || "claude-sonnet-4-5",
             // Explicit isolation: don't load any filesystem settings
             // (no ~/.claude/settings.json, no .claude/settings.json, no plugins, no skills)
             settingSources: [],
+        };
+
+        // Intercept background Bash: redirect to LightIDE terminal with log file.
+        // Strategy: ALLOW with updated input that is a cheap `echo` command.
+        // This returns a "successful" tool_result to Claude so it won't retry.
+        opts.canUseTool = async (toolName, toolInput) => {
+            if (toolName === "Bash" && toolInput.run_in_background === true) {
+                try {
+                    const response = await requestBgSpawn(
+                        workspaceId,
+                        toolInput.command,
+                        opts.cwd,
+                    );
+                    if (response.success) {
+                        const msg = `[Dispatched to LightIDE terminal ${response.terminalId}] Command is running live in a dedicated terminal tab. User can see real-time output. Log file: ${response.logPath}. Use Read tool on this log file if you need to check output. Do NOT run this command again here.`;
+                        return {
+                            behavior: "allow",
+                            updatedInput: {
+                                command: `echo '${msg.replace(/'/g, "'\"'\"'")}'`,
+                                description: "Dispatch notification (redirected to LightIDE terminal)",
+                            },
+                        };
+                    } else {
+                        return {
+                            behavior: "allow",
+                            updatedInput: {
+                                command: `echo 'Failed to dispatch to LightIDE terminal: ${(response.error || "unknown").replace(/'/g, "")}. User should run this manually.'`,
+                            },
+                        };
+                    }
+                } catch (e) {
+                    return {
+                        behavior: "allow",
+                        updatedInput: {
+                            command: `echo 'Could not dispatch background task: ${(e.message || String(e)).replace(/'/g, "")}'`,
+                        },
+                    };
+                }
+            }
+            return { behavior: "allow", updatedInput: toolInput };
         };
 
         // Thinking mode: 4.6 uses adaptive, 4.5 uses enabled with budget
@@ -102,8 +172,8 @@ async function handleSend(cmd) {
             opts.allowedTools = cmd.allowedTools;
         }
 
-        // If images are attached, build a streaming input with content blocks
-        // (text + image), otherwise use a plain string prompt
+        // Use streaming input only when images are attached; otherwise use
+        // plain string prompt (more reliable, completes predictably).
         let promptArg;
         if (Array.isArray(cmd.images) && cmd.images.length > 0) {
             const content = [];

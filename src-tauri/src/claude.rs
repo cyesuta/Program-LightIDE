@@ -168,6 +168,15 @@ pub fn send_message(
     Ok(())
 }
 
+/// Forward a raw JSON response to the sidecar stdin (used for bg task responses)
+pub fn send_raw_response(response_json: &str) -> Result<(), String> {
+    let claude = CLAUDE.lock();
+    if let Some(tx) = &claude.stdin_tx {
+        tx.send(response_json.to_string()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Reset a specific workspace's session
 pub fn reset_workspace(workspace_id: &str) {
     let claude = CLAUDE.lock();

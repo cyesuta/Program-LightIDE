@@ -197,3 +197,12 @@ pub async fn claude_reset_workspace(workspace_id: String) -> CommandResult<()> {
     crate::claude::reset_workspace(&workspace_id);
     CommandResult::ok(())
 }
+
+/// Forward a background-task response JSON to the sidecar stdin
+#[command]
+pub async fn claude_bg_response(response: serde_json::Value) -> CommandResult<()> {
+    match crate::claude::send_raw_response(&response.to_string()) {
+        Ok(_) => CommandResult::ok(()),
+        Err(e) => CommandResult::err(&e),
+    }
+}

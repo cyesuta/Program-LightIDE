@@ -80,6 +80,7 @@ impl TerminalHandle {
         id: String,
         shell_type: ShellType,
         cwd: Option<String>,
+        log_file: Option<String>,
         app_handle: AppHandle,
     ) -> anyhow::Result<Self> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<TerminalCommand>();
@@ -90,6 +91,7 @@ impl TerminalHandle {
         let shell_args: Vec<String> = shell_type.args().iter().map(|s| s.to_string()).collect();
         let cwd_clone = cwd.clone();
         let terminal_id = id.clone();
+        let log_file_clone = log_file.clone();
 
         // Spawn terminal in a dedicated thread
         thread::spawn(move || {
@@ -156,10 +158,24 @@ impl TerminalHandle {
 
             let mut writer = pair.master.take_writer().unwrap();
 
+            // Open log file (append mode) if requested
+            let log_file_handle: Option<Arc<Mutex<std::fs::File>>> = log_file_clone.as_ref().and_then(|path| {
+                if let Some(parent) = std::path::Path::new(path).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .ok()
+                    .map(|f| Arc::new(Mutex::new(f)))
+            });
+
             // Output reader thread - pushes data to frontend via Tauri events
             let alive_reader = Arc::clone(&alive_clone);
             let emit_handle = app_handle.clone();
             let emit_terminal_id = terminal_id.clone();
+            let log_file_reader = log_file_handle.clone();
             thread::spawn(move || {
                 // Use small buffer for responsive output
                 let mut buffer = [0u8; 4096];
@@ -174,6 +190,11 @@ impl TerminalHandle {
                             break;
                         }
                         Ok(n) => {
+                            // Write raw bytes to log file if configured
+                            if let Some(ref lf) = log_file_reader {
+                                let mut f = lf.lock();
+                                let _ = f.write_all(&buffer[..n]);
+                            }
                             // Convert to string and emit event to frontend immediately
                             let data = String::from_utf8_lossy(&buffer[..n]).to_string();
                             let _ = emit_handle.emit(
@@ -305,6 +326,7 @@ impl TerminalManager {
         &self,
         shell_type: ShellType,
         cwd: Option<String>,
+        log_file: Option<String>,
         app_handle: AppHandle,
     ) -> anyhow::Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
@@ -313,7 +335,7 @@ impl TerminalManager {
             id, shell_type
         );
 
-        let handle = TerminalHandle::new(id.clone(), shell_type, cwd, app_handle)?;
+        let handle = TerminalHandle::new(id.clone(), shell_type, cwd, log_file, app_handle)?;
         self.sessions.lock().insert(id.clone(), handle);
 
         eprintln!("[TerminalManager] Terminal {} created successfully", id);

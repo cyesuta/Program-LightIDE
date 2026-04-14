@@ -1619,6 +1619,110 @@
     box-shadow: 0 0 8px rgba(163, 113, 247, 0.4);
 }
 
+/* Background task card (dispatched to LightIDE terminal) */
+.claude-bg-task-card {
+    background: linear-gradient(135deg, rgba(79, 193, 255, 0.1), rgba(163, 113, 247, 0.1));
+    border: 1px solid var(--info);
+    border-radius: 8px;
+    margin: 4px 0;
+    overflow: hidden;
+    animation: fadeIn 0.15s ease;
+}
+
+.claude-bg-task-card.completed {
+    background: linear-gradient(135deg, rgba(78, 201, 176, 0.08), rgba(78, 201, 176, 0.03));
+    border-color: var(--success);
+}
+
+.claude-bg-task-card.completed .bg-task-header {
+    background: rgba(78, 201, 176, 0.15);
+    color: var(--success);
+    border-bottom-color: rgba(78, 201, 176, 0.3);
+}
+
+.bg-task-status {
+    margin-left: auto;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(255, 200, 0, 0.15);
+    color: var(--warning);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.bg-task-status.done {
+    background: rgba(78, 201, 176, 0.2);
+    color: var(--success);
+    animation: none;
+}
+
+.bg-task-header {
+    padding: 8px 12px;
+    background: rgba(79, 193, 255, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--info);
+    font-weight: 600;
+    border-bottom: 1px solid rgba(79, 193, 255, 0.3);
+}
+
+.bg-task-icon {
+    font-size: 16px;
+}
+
+.bg-task-body {
+    padding: 10px 12px;
+    user-select: text;
+}
+
+.bg-task-cmd {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    padding: 6px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.bg-task-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.bg-task-meta code {
+    background: var(--bg-primary);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--text-accent);
+}
+
+.bg-task-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.bg-task-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--info);
+    background: transparent;
+    color: var(--info);
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.bg-task-btn:hover {
+    background: var(--info);
+    color: white;
+}
+
 /* Thinking content block (model's reasoning output) */
 .claude-thinking-block {
     background: rgba(163, 113, 247, 0.05);

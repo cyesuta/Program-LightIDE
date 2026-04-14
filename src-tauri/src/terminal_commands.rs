@@ -23,6 +23,7 @@ pub async fn create_terminal(
     app: AppHandle,
     shell: String,
     cwd: Option<String>,
+    log_file: Option<String>,
 ) -> CommandResult<TerminalInfo> {
     let shell_type = match shell.to_lowercase().as_str() {
         "powershell" | "ps" => ShellType::PowerShell,
@@ -31,7 +32,7 @@ pub async fn create_terminal(
         _ => ShellType::PowerShell, // Default to PowerShell
     };
 
-    match TERMINAL_MANAGER.create_terminal(shell_type, cwd, app) {
+    match TERMINAL_MANAGER.create_terminal(shell_type, cwd, log_file, app) {
         Ok(id) => CommandResult::ok(TerminalInfo {
             id,
             shell_type: shell,

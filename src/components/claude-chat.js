@@ -70,7 +70,11 @@ class ClaudeChatComponent {
         this.views = new Map();
         this.activeWorkspaceId = null;
 
+        // Active background tasks: terminalId -> {cardEl, tabId, command, workspaceId}
+        this.bgTasks = new Map();
+
         this._unlisten = null;
+        this._exitUnlisten = null;
     }
 
     init(parentContainer) {
@@ -229,6 +233,12 @@ class ClaudeChatComponent {
         window.__TAURI__.event.listen('claude-event', (event) => {
             this.handleEvent(event.payload.data);
         }).then(unlisten => { this._unlisten = unlisten; });
+
+        // Listen for terminal exit events — used to detect bg task completion
+        window.__TAURI__.event.listen('terminal-exit', (event) => {
+            const { terminalId } = event.payload;
+            this.handleBgTaskExit(terminalId);
+        }).then(unlisten => { this._exitUnlisten = unlisten; });
     }
 
     // ========== Workspace management ==========
@@ -422,6 +432,12 @@ class ClaudeChatComponent {
         try { data = JSON.parse(line); } catch { return; }
 
         if (data.type === 'ready') return;
+
+        // Handle background task spawn requests from sidecar
+        if (data.type === 'bg_spawn_request') {
+            this.handleBgSpawnRequest(data);
+            return;
+        }
 
         const workspaceId = data.workspaceId || 'default';
         const view = this.getOrCreateView(workspaceId);
@@ -872,6 +888,129 @@ class ClaudeChatComponent {
         try { await window.__TAURI__.core.invoke('claude_abort_workspace', { workspaceId }); } catch (e) {}
     }
 
+    async handleBgSpawnRequest(data) {
+        const { reqId, workspaceId, command, cwd } = data;
+
+        try {
+            if (typeof terminal === 'undefined' || !terminal.createBgTaskTab) {
+                throw new Error('Terminal component not available');
+            }
+
+            // Auto-switch right panel to terminal mode so user can see it
+            if (window.app?.switchMode) {
+                window.app.switchMode('terminal');
+            }
+
+            // Create a new terminal tab, feed the command, return the terminalId + logPath
+            const result = await terminal.createBgTaskTab(command, cwd);
+
+            // Add a notification card in the Claude chat view
+            const view = this.getOrCreateView(workspaceId);
+            const cardEl = this.addBgTaskCard(view, {
+                command,
+                terminalId: result.terminalId,
+                logFile: result.logFile,
+                tabId: result.tabId,
+            });
+
+            // Track so we can update card when task exits
+            if (result.terminalId) {
+                this.bgTasks.set(result.terminalId, {
+                    cardEl,
+                    tabId: result.tabId,
+                    command,
+                    workspaceId,
+                    logFile: result.logFile,
+                });
+            }
+
+            // Respond to sidecar
+            await window.__TAURI__.core.invoke('claude_bg_response', {
+                response: {
+                    type: 'bg_spawn_response',
+                    reqId,
+                    success: true,
+                    terminalId: result.terminalId || result.tabId,
+                    logPath: result.logFile,
+                },
+            });
+        } catch (e) {
+            console.error('Failed to spawn bg task:', e);
+            await window.__TAURI__.core.invoke('claude_bg_response', {
+                response: {
+                    type: 'bg_spawn_response',
+                    reqId,
+                    success: false,
+                    error: e.message || String(e),
+                },
+            });
+        }
+    }
+
+    addBgTaskCard(view, info) {
+        const el = document.createElement('div');
+        el.className = 'claude-bg-task-card running';
+        el.dataset.tabId = info.tabId;
+        el.innerHTML = `
+            <div class="bg-task-header">
+                <span class="bg-task-icon">⚡</span>
+                <span class="bg-task-title">背景任務執行中</span>
+                <span class="bg-task-status">🔄 運行中</span>
+            </div>
+            <div class="bg-task-body">
+                <div class="bg-task-cmd">${this.esc(info.command)}</div>
+                <div class="bg-task-meta">
+                    <span>📝 log: <code>${this.esc(info.logFile || 'N/A')}</code></span>
+                </div>
+                <div class="bg-task-actions">
+                    <button class="bg-task-btn" data-action="view">🔍 切換到終端機</button>
+                    <button class="bg-task-btn" data-action="close">🗑 關閉 tab</button>
+                </div>
+            </div>
+        `;
+        el.querySelector('[data-action="view"]').addEventListener('click', () => {
+            if (window.app?.switchMode) window.app.switchMode('terminal');
+            if (typeof terminal !== 'undefined' && terminal.switchTab) {
+                terminal.switchTab(info.tabId);
+            }
+        });
+        el.querySelector('[data-action="close"]').addEventListener('click', () => {
+            if (typeof terminal !== 'undefined' && terminal.closeTab) {
+                terminal.closeTab(info.tabId);
+            }
+        });
+        view.messagesEl.appendChild(el);
+        this.scrollToBottom(view);
+        return el;
+    }
+
+    handleBgTaskExit(terminalId) {
+        const task = this.bgTasks.get(terminalId);
+        if (!task) return;
+
+        // Update the card to "completed" state
+        const card = task.cardEl;
+        if (card) {
+            card.classList.remove('running');
+            card.classList.add('completed');
+            const title = card.querySelector('.bg-task-title');
+            const status = card.querySelector('.bg-task-status');
+            if (title) title.textContent = '背景任務已完成';
+            if (status) {
+                status.textContent = '✅ 已完成';
+                status.className = 'bg-task-status done';
+            }
+        }
+
+        // Auto-switch back to Claude mode so user sees the notification
+        if (window.app?.switchMode) {
+            window.app.switchMode('claude');
+        }
+
+        // Remove from tracking (keep card visible)
+        this.bgTasks.delete(terminalId);
+    }
+
     modelSupportsThinking(model) {
         // Haiku doesn't support extended thinking; Sonnet/Opus 4.5+ do
         if (!model) return false;
@@ -1156,6 +1295,7 @@ class ClaudeChatComponent {
 
     destroy() {
         if (this._unlisten) this._unlisten();
+        if (this._exitUnlisten) this._exitUnlisten();
         if (this.container) this.container.remove();
     }
 }
