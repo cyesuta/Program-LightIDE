@@ -828,6 +828,22 @@
     align-self: flex-end;
 }
 
+.claude-msg-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    justify-content: flex-end;
+}
+
+.claude-msg-images img {
+    max-width: 240px;
+    max-height: 200px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+}
+
 .claude-msg-user .claude-msg-content {
     background: var(--accent);
     color: white;
@@ -1433,6 +1449,63 @@
     align-items: flex-end;
 }
 
+.claude-attachments {
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 8px;
+}
+
+.claude-attachment {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+.claude-attachment img {
+    display: block;
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+}
+
+.claude-attachment .att-size {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font-size: 10px;
+    text-align: center;
+    padding: 2px 0;
+}
+
+.claude-attachment .att-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.claude-attachment .att-remove:hover {
+    background: var(--error);
+}
+
 .claude-input {
     flex: 1;
     background: var(--bg-primary);
@@ -1518,6 +1591,75 @@
 .claude-model-select option {
     background: var(--bg-secondary);
     color: var(--text-primary);
+}
+
+.claude-thinking-toggle {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-muted);
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.claude-thinking-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.claude-thinking-toggle.active {
+    background: linear-gradient(135deg, #a371f7, #6e40c9);
+    color: white;
+    border-color: #a371f7;
+    box-shadow: 0 0 8px rgba(163, 113, 247, 0.4);
+}
+
+/* Thinking content block (model's reasoning output) */
+.claude-thinking-block {
+    background: rgba(163, 113, 247, 0.05);
+    border-left: 3px solid #a371f7;
+    border-radius: 4px;
+    margin: 4px 0;
+    overflow: hidden;
+}
+
+.thinking-block-header {
+    padding: 8px 12px;
+    font-size: 14px;
+    color: #b491ed;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.thinking-block-header:hover {
+    background: rgba(163, 113, 247, 0.1);
+}
+
+.thinking-block-toggle {
+    margin-left: auto;
+    font-size: 11px;
+}
+
+.thinking-block-body {
+    padding: 0 12px 10px 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    font-style: italic;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .claude-action-btn:hover {

@@ -83,8 +83,9 @@ class ClaudeChatComponent {
             </div>
             <div class="claude-messages-wrapper" id="claudeMessagesWrapper"></div>
             <div class="claude-input-area">
+                <div class="claude-attachments" id="claudeAttachments"></div>
                 <div class="claude-input-row">
-                    <textarea class="claude-input" id="claudeInput" placeholder="輸入訊息..." rows="1"></textarea>
+                    <textarea class="claude-input" id="claudeInput" placeholder="輸入訊息... (Ctrl+V 貼入圖片)" rows="1"></textarea>
                     <button class="claude-send-btn" id="claudeSendBtn" title="送出 (Enter)">▶</button>
                 </div>
                 <div class="claude-actions">
@@ -99,6 +100,7 @@ class ClaudeChatComponent {
                             <option value="claude-opus-4-6">Opus 4.6</option>
                         </optgroup>
                     </select>
+                    <button class="claude-thinking-toggle" id="claudeThinkingToggle" title="切換思考模式" style="display:none;">🧠 思考</button>
                     <select class="claude-model-select" id="claudePromptMode" title="System Prompt 模式">
                         <option value="minimal">省 token (簡化 prompt)</option>
                         <option value="full">完整 (含 CLAUDE.md/hooks)</option>
@@ -146,11 +148,39 @@ class ClaudeChatComponent {
         this.container.querySelector('#claudeAbortBtn').addEventListener('click', () => this.abort());
 
         // Model selector — persist to localStorage
+        // Pasted images (current draft)
+        this.pendingImages = []; // [{data, mediaType}]
+        this.attachmentsEl = this.container.querySelector('#claudeAttachments');
+
+        // Paste handler — capture images from clipboard
+        this.inputEl.addEventListener('paste', async (e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of items) {
+                if (item.type && item.type.startsWith('image/')) {
+                    e.preventDefault();
+                    const blob = item.getAsFile();
+                    if (blob) await this.attachImage(blob);
+                }
+            }
+        });
+
         this.modelSelect = this.container.querySelector('#claudeModelSelect');
         const savedModel = localStorage.getItem('lightide-claude-model');
         if (savedModel) this.modelSelect.value = savedModel;
         this.modelSelect.addEventListener('change', () => {
             localStorage.setItem('lightide-claude-model', this.modelSelect.value);
+            this.refreshThinkingButton();
+        });
+
+        // Thinking toggle — only shown for thinking-capable models
+        this.thinkingBtn = this.container.querySelector('#claudeThinkingToggle');
+        this.thinkingEnabled = localStorage.getItem('lightide-claude-thinking') === '1';
+        this.refreshThinkingButton();
+        this.thinkingBtn.addEventListener('click', () => {
+            this.thinkingEnabled = !this.thinkingEnabled;
+            localStorage.setItem('lightide-claude-thinking', this.thinkingEnabled ? '1' : '0');
+            this.refreshThinkingButton();
         });
 
         // Prompt mode selector — persist
@@ -332,16 +362,22 @@ class ClaudeChatComponent {
         if (!workspaceId) return;
 
         const view = this.getActiveView();
-        if (!userInput || view.isProcessing) return;
+        // Allow sending if there's text OR images
+        if ((!userInput && this.pendingImages.length === 0) || view.isProcessing) return;
 
         // If we have a prior summary from compact, prepend it to the message (one-time)
-        let message = userInput;
+        let message = userInput || '(圖片訊息)';
         if (view._priorSummary) {
-            message = `[從前次對話的摘要繼續]\n${view._priorSummary}\n\n[使用者新訊息]\n${userInput}`;
+            message = `[從前次對話的摘要繼續]\n${view._priorSummary}\n\n[使用者新訊息]\n${message}`;
             view._priorSummary = null;
         }
 
-        this.addUserMessage(view, userInput);
+        // Capture images for this send and clear pending
+        const images = this.pendingImages.slice();
+        this.pendingImages = [];
+        this.renderAttachments();
+
+        this.addUserMessage(view, userInput || '', images);
         this.inputEl.value = '';
         this.inputEl.style.height = 'auto';
 
@@ -365,7 +401,11 @@ class ClaudeChatComponent {
             const sessionId = ws?.claudeSessionId || null;
             const model = this.modelSelect?.value || null;
             const promptMode = this.promptModeSelect?.value || 'minimal';
-            await window.__TAURI__.core.invoke('claude_send_message', { message, cwd, workspaceId, sessionId, model, promptMode });
+            await window.__TAURI__.core.invoke('claude_send_message', {
+                message, cwd, workspaceId, sessionId, model, promptMode,
+                images: images.length ? images : null,
+                thinking: this.modelSupportsThinking(model) && this.thinkingEnabled,
+            });
         } catch (error) {
             this.hideThinking(view);
             this.addSystemMessage(view, '錯誤: ' + (error.message || error));
@@ -396,6 +436,11 @@ class ClaudeChatComponent {
                         workspaceManager.save();
                     }
                 }
+                break;
+
+            case 'thinking':
+                this.hideThinking(view);
+                this.appendThinkingBlock(view, data.text);
                 break;
 
             case 'text':
@@ -536,6 +581,28 @@ class ClaudeChatComponent {
             view.thinkingEl.remove();
             view.thinkingEl = null;
         }
+    }
+
+    appendThinkingBlock(view, text) {
+        // End any current text block so thinking shows as separate
+        view.currentAssistantEl = null;
+
+        const el = document.createElement('div');
+        el.className = 'claude-thinking-block';
+        el.innerHTML = `
+            <div class="thinking-block-header">🧠 思考過程 <span class="thinking-block-toggle">▼</span></div>
+            <div class="thinking-block-body">${this.esc(text)}</div>
+        `;
+        const header = el.querySelector('.thinking-block-header');
+        const body = el.querySelector('.thinking-block-body');
+        const toggle = el.querySelector('.thinking-block-toggle');
+        header.addEventListener('click', () => {
+            const open = body.style.display !== 'none';
+            body.style.display = open ? 'none' : 'block';
+            toggle.textContent = open ? '▶' : '▼';
+        });
+        view.messagesEl.appendChild(el);
+        this.scrollToBottom(view);
     }
 
     appendAssistantText(view, text) {
@@ -740,10 +807,14 @@ class ClaudeChatComponent {
         view.pendingTools.clear();
     }
 
-    addUserMessage(view, text) {
+    addUserMessage(view, text, images) {
         const el = document.createElement('div');
         el.className = 'claude-msg claude-msg-user';
-        el.innerHTML = `<div class="claude-msg-content">${this.esc(text)}</div>`;
+        const imgsHtml = (images && images.length) ? `<div class="claude-msg-images">${
+            images.map(img => `<img src="data:${img.mediaType};base64,${img.data}" alt="">`).join('')
+        }</div>` : '';
+        const textHtml = text ? `<div class="claude-msg-content">${this.esc(text)}</div>` : '';
+        el.innerHTML = imgsHtml + textHtml;
         view.messagesEl.appendChild(el);
         const welcome = view.messagesEl.querySelector('.claude-welcome');
         if (welcome) welcome.remove();
@@ -799,6 +870,70 @@ class ClaudeChatComponent {
         const workspaceId = this.activeWorkspaceId;
         if (!workspaceId) return;
         try { await window.__TAURI__.core.invoke('claude_abort_workspace', { workspaceId }); } catch (e) {}
+    }
+
+    modelSupportsThinking(model) {
+        // Haiku doesn't support extended thinking; Sonnet/Opus 4.5+ do
+        if (!model) return false;
+        if (model.includes('haiku')) return false;
+        return /sonnet|opus/.test(model);
+    }
+
+    refreshThinkingButton() {
+        if (!this.thinkingBtn) return;
+        const supports = this.modelSupportsThinking(this.modelSelect?.value);
+        this.thinkingBtn.style.display = supports ? 'inline-flex' : 'none';
+        if (supports) {
+            this.thinkingBtn.classList.toggle('active', this.thinkingEnabled);
+            this.thinkingBtn.title = this.thinkingEnabled ? '思考已開啟（點擊關閉）' : '思考已關閉（點擊開啟）';
+        }
+    }
+
+    async attachImage(blob) {
+        const mediaType = blob.type || 'image/png';
+        const data = await this.blobToBase64(blob);
+        this.pendingImages.push({ data, mediaType, size: blob.size });
+        this.renderAttachments();
+    }
+
+    blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result;
+                const base64 = typeof result === 'string' ? result.split(',')[1] : '';
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    renderAttachments() {
+        if (!this.attachmentsEl) return;
+        if (this.pendingImages.length === 0) {
+            this.attachmentsEl.innerHTML = '';
+            this.attachmentsEl.style.display = 'none';
+            return;
+        }
+        this.attachmentsEl.style.display = 'flex';
+        this.attachmentsEl.innerHTML = this.pendingImages.map((img, i) => {
+            const sizeKb = Math.round(img.size / 1024);
+            return `
+                <div class="claude-attachment">
+                    <img src="data:${img.mediaType};base64,${img.data}" alt="圖片 ${i + 1}">
+                    <span class="att-size">${sizeKb}KB</span>
+                    <button class="att-remove" data-idx="${i}" title="移除">×</button>
+                </div>
+            `;
+        }).join('');
+        this.attachmentsEl.querySelectorAll('.att-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.idx);
+                this.pendingImages.splice(idx, 1);
+                this.renderAttachments();
+            });
+        });
     }
 
     showConfirm({ icon = '❓', title = '確認', body = '', confirmText = '確定', cancelText = '取消' }) {

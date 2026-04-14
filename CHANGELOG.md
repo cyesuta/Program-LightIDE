@@ -68,6 +68,27 @@
 
 ## 開發日誌
 
+### 2026-04-14 (後續)
+- ✅ **Claude chat 圖片貼上**：輸入框支援 Ctrl+V 貼上圖片，縮圖預覽可移除，
+  Sidecar 偵測圖片時自動切換 streaming input 模式，用 Anthropic content blocks
+  格式 (text + image base64) 傳送。訊息泡泡顯示圖片縮圖
+- ✅ **思考模型支援**：模型選擇器旁加「🧠 思考」按鈕，僅在支援的模型顯示
+  (Sonnet/Opus 4.5/4.6)。4.6 用 adaptive 思考，4.5 用 enabled + 8000 budget。
+  Sidecar 轉發 thinking 內容區塊，前端以紫色左邊框折疊區顯示
+- ✅ **IDE 預設開啟 Claude 模式** (而非終端機)
+- ✅ **檔案樹 SVG 圖示**：每種檔案類型獨立 SVG 圖示，帶語言顏色
+  (Rust 橘/JS 黃/TS 藍/Python 藍底黃字/Go 青/HTML 紅/CSS 藍/JSON 黃/Markdown 藍/圖片紫)
+- ✅ **TodoWrite 工具清單渲染**：✅完成/🔄進行中/⬜待辦，取代原 JSON 顯示
+- ✅ **快速動作按鈕** (強制 Haiku 4.5)：📤 Commit+Push、📋 記錄 Changelog
+- ✅ **打包重開** (📦) 按鈕：請 Sonnet 4.5 壓縮對話為摘要，重置 session，
+  摘要自動 prepend 到下次訊息。避免無限累積歷史
+- ✅ **清空顯示** (🧹) 按鈕：保留最後 2 輪對話，session 不變
+- ✅ **自訂 confirm modal**：取代原生 confirm 對話框，帶動畫和鍵盤支援
+- ✅ **背景 Bash 初版**：`run_in_background: true` 的 Bash 特殊顯示，
+  但依賴 Claude 主動 BashOutput，UX 有限制
+- ✅ **Workspace tabs 放大**：更容易點擊 (28px → 42px 高度)
+- ✅ 修復 tab bar 被 main-container 遮蔽的 flex 佈局問題
+
 ### 2026-04-14
 - ✅ **Token 用量大幅優化 (省 token 模式)**
   - **問題**: 預設 Claude Code preset system prompt ~21k tokens，每輪都要重送

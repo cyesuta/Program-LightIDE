@@ -142,6 +142,8 @@ pub fn send_message(
     session_id: Option<&str>,
     model: Option<&str>,
     prompt_mode: Option<&str>,
+    images: Option<serde_json::Value>,
+    thinking: Option<bool>,
 ) -> Result<(), String> {
     ensure_sidecar(app)?;
 
@@ -155,6 +157,8 @@ pub fn send_message(
         "sessionId": session_id,
         "model": model,
         "promptMode": prompt_mode,
+        "images": images,
+        "thinking": thinking.unwrap_or(false),
     });
 
     if let Some(tx) = &claude.stdin_tx {

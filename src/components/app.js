@@ -24,10 +24,11 @@ class App {
         const claudeContent = document.getElementById('claudeContent');
         this.claudeChat = new ClaudeChatComponent();
         this.claudeChat.init(claudeContent);
-        this.claudeChat.hide(); // hidden by default (terminal mode)
 
-        this.currentMode = 'terminal';
+        // Default to Claude mode
+        this.currentMode = 'terminal'; // will be flipped by switchMode below
         this.setupModeSwitcher();
+        this.switchMode('claude');
 
         // Initialize workspace manager (must be after other components)
         workspaceManager = new WorkspaceManager();

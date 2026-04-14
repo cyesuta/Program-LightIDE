@@ -53,12 +53,22 @@ async function handleSend(cmd) {
             maxTurns: cmd.maxTurns || 50,
             // Default to Sonnet 4.5 (cheaper and stable). Override via cmd.model.
             model: cmd.model || "claude-sonnet-4-5",
-            // Disable extended thinking by default (saves output tokens)
-            thinking: { type: "disabled" },
             // Explicit isolation: don't load any filesystem settings
             // (no ~/.claude/settings.json, no .claude/settings.json, no plugins, no skills)
             settingSources: [],
         };
+
+        // Thinking mode: 4.6 uses adaptive, 4.5 uses enabled with budget
+        if (cmd.thinking) {
+            const m = cmd.model || "";
+            if (m.includes("4-6")) {
+                opts.thinking = { type: "adaptive" };
+            } else {
+                opts.thinking = { type: "enabled", budgetTokens: 8000 };
+            }
+        } else {
+            opts.thinking = { type: "disabled" };
+        }
 
         // System prompt mode:
         //   "minimal" (default): short custom prompt + restricted tools, fastest/cheapest
@@ -92,8 +102,36 @@ async function handleSend(cmd) {
             opts.allowedTools = cmd.allowedTools;
         }
 
+        // If images are attached, build a streaming input with content blocks
+        // (text + image), otherwise use a plain string prompt
+        let promptArg;
+        if (Array.isArray(cmd.images) && cmd.images.length > 0) {
+            const content = [];
+            if (cmd.message) {
+                content.push({ type: "text", text: cmd.message });
+            }
+            for (const img of cmd.images) {
+                content.push({
+                    type: "image",
+                    source: {
+                        type: "base64",
+                        media_type: img.mediaType || "image/png",
+                        data: img.data,
+                    },
+                });
+            }
+            const userMessage = {
+                type: "user",
+                message: { role: "user", content },
+                parent_tool_use_id: null,
+            };
+            promptArg = (async function* () { yield userMessage; })();
+        } else {
+            promptArg = cmd.message;
+        }
+
         const stream = query({
-            prompt: cmd.message,
+            prompt: promptArg,
             abortController,
             options: opts,
         });
@@ -114,6 +152,8 @@ async function handleSend(cmd) {
                 for (const block of content) {
                     if (block.type === "text" && block.text) {
                         sendWs({ type: "text", text: block.text });
+                    } else if (block.type === "thinking" && block.thinking) {
+                        sendWs({ type: "thinking", text: block.thinking });
                     } else if (block.type === "tool_use") {
                         sendWs({
                             type: "tool_use",
