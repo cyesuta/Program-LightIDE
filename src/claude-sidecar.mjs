@@ -282,16 +282,20 @@ Instead you MUST simply tell the user in one short sentence that the task is run
                     }
                 }
             } else if (type === "result") {
+                const cc = message.usage?.cache_creation || {};
                 sendWs({
                     type: "done",
                     success: message.subtype === "success",
                     duration_ms: message.duration_ms || 0,
                     cost: message.total_cost_usd || 0,
                     num_turns: message.num_turns || 0,
+                    model: message.model || null,
                     input_tokens: message.usage?.input_tokens || 0,
                     output_tokens: message.usage?.output_tokens || 0,
                     cache_read_tokens: message.usage?.cache_read_input_tokens || 0,
                     cache_creation_tokens: message.usage?.cache_creation_input_tokens || 0,
+                    cache_creation_5m_tokens: cc.ephemeral_5m_input_tokens || 0,
+                    cache_creation_1h_tokens: cc.ephemeral_1h_input_tokens || 0,
                 });
             }
         }
