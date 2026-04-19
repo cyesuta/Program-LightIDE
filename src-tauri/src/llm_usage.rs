@@ -54,6 +54,11 @@ pub struct LlmUsagePayload {
     pub prompt_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remarks: Option<serde_json::Value>,
+    // Client-only flag; stripped before sending to Supabase
+    #[serde(default, skip_serializing)]
+    pub should_probe: Option<bool>,
 }
 
 static ENV_CACHE: OnceLock<HashMap<String, String>> = OnceLock::new();
@@ -133,6 +138,42 @@ fn base_input_price(model: &str) -> Option<f64> {
     None
 }
 
+fn spawn_usage_probe(lightide_dir: &std::path::Path) {
+    let probe = lightide_dir.join(".claude/hooks/usage-probe.mjs");
+    if !probe.exists() {
+        return;
+    }
+    // Single-flight: if probe ran recently (within 90s), skip to avoid overlap.
+    let lock = lightide_dir.join(".claude/usage-probe.lock");
+    if let Ok(meta) = std::fs::metadata(&lock) {
+        if let Ok(mod_time) = meta.modified() {
+            if let Ok(elapsed) = mod_time.elapsed() {
+                if elapsed.as_secs() < 90 {
+                    return;
+                }
+            }
+        }
+    }
+    let _ = std::fs::write(&lock, std::process::id().to_string());
+
+    let mut cmd = std::process::Command::new("node");
+    cmd.arg(&probe)
+        .current_dir(lightide_dir)
+        .env("CLAUDE_PROJECT_DIR", lightide_dir)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS (0x00000008) | CREATE_NO_WINDOW (0x08000000)
+        cmd.creation_flags(0x00000008 | 0x08000000);
+    }
+
+    let _ = cmd.spawn();
+}
+
 fn compute_cost_usd(p: &LlmUsagePayload) -> f64 {
     let model = match p.model.as_deref() {
         Some(m) => m,
@@ -202,6 +243,41 @@ pub async fn log_llm_usage(mut payload: LlmUsagePayload) -> Result<(), String> {
             payload.cost_usd = Some((computed * 1_000_000.0).round() / 1_000_000.0);
         }
     }
+
+    // Attach cached /usage info into remarks (shared with the Claude Code CLI hook).
+    // Cache is project-local to LightIDE's repo, regardless of which workspace is active —
+    // /usage data is user-account-wide, not per-project.
+    let lightide_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
+    let cache_path = lightide_dir.join(".claude").join("usage-cache.json");
+    if payload.remarks.is_none() {
+        if let Ok(text) = std::fs::read_to_string(&cache_path) {
+            if let Ok(mut val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Ok(meta) = std::fs::metadata(&cache_path) {
+                    if let Ok(mod_time) = meta.modified() {
+                        if let Ok(elapsed) = mod_time.elapsed() {
+                            if let Some(obj) = val.as_object_mut() {
+                                obj.insert(
+                                    "cache_age_sec".to_string(),
+                                    serde_json::json!(elapsed.as_secs()),
+                                );
+                            }
+                        }
+                    }
+                }
+                payload.remarks = Some(val);
+            }
+        }
+    }
+
+    // Every N turns the client asks us to refresh /usage. Spawn the probe detached;
+    // it writes back to the shared cache file, picked up by the next log_llm_usage call.
+    if payload.should_probe.unwrap_or(false) {
+        spawn_usage_probe(&lightide_dir);
+    }
+    payload.should_probe = None;
 
     let endpoint = format!("{}/rest/v1/llm_usage", url.trim_end_matches('/'));
     let client = reqwest::Client::builder()

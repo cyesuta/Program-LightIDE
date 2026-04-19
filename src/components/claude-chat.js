@@ -902,7 +902,7 @@ class ClaudeChatComponent {
         const aborted = data.aborted ? '<span class="stats-aborted">已中止</span>' : '';
 
         // Fire-and-forget: push this turn to Supabase llm_usage
-        this.logUsageRemote(data, workspaceId).catch(e => {
+        this.logUsageRemote(view, data, workspaceId).catch(e => {
             console.warn('[llm_usage] upload failed:', e);
         });
 
@@ -931,8 +931,12 @@ class ClaudeChatComponent {
         view.messagesEl.scrollTop = view.messagesEl.scrollHeight;
     }
 
-    async logUsageRemote(data, workspaceId) {
+    async logUsageRemote(view, data, workspaceId) {
         const ws = workspaceManager?.workspaces?.find(w => w.id === workspaceId);
+        // Per-workspace turn counter — every 3 completed turns, ask backend to refresh /usage.
+        view.turnCount = (view.turnCount || 0) + 1;
+        const shouldProbe = view.turnCount % 3 === 0;
+
         const payload = {
             session_id: ws?.claudeSessionId || null,
             num_turns: data.num_turns || null,
@@ -952,6 +956,7 @@ class ClaudeChatComponent {
             thinking_enabled: !!this.thinkingEnabled,
             prompt_mode: this.promptModeSelect?.value || null,
             error: (!data.success && !data.aborted) ? 'turn failed' : null,
+            should_probe: shouldProbe,
         };
         await window.__TAURI__.core.invoke('log_llm_usage', { payload });
     }
