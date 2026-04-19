@@ -190,10 +190,11 @@ impl TerminalHandle {
                             break;
                         }
                         Ok(n) => {
-                            // Write raw bytes to log file if configured
+                            // Write raw bytes to log file if configured (and flush immediately)
                             if let Some(ref lf) = log_file_reader {
                                 let mut f = lf.lock();
                                 let _ = f.write_all(&buffer[..n]);
+                                let _ = f.flush();
                             }
                             // Convert to string and emit event to frontend immediately
                             let data = String::from_utf8_lossy(&buffer[..n]).to_string();

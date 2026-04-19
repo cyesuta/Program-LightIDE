@@ -24,13 +24,19 @@ class ClaudeWorkspaceView {
         this.currentAssistantEl = null;
         this.thinkingEl = null;
         this.pendingTools = new Map();
-        // Tokens broken down: input=new (full price), cache=cached (10% price), output
-        this.totalTokens = { input: 0, cache: 0, output: 0, cost: 0 };
+        // Tokens broken down: input=new, cache_read=cheap reads, cache_create=writes, output
+        this.totalTokens = { input: 0, cache_read: 0, cache_create: 0, output: 0, cost: 0 };
         this.startTime = null;
         this.timerInterval = null;
     }
 
-    show() { this.messagesEl.style.display = 'flex'; }
+    show() {
+        this.messagesEl.style.display = 'flex';
+        // Scroll to bottom so latest message is visible
+        requestAnimationFrame(() => {
+            this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        });
+    }
     hide() { this.messagesEl.style.display = 'none'; }
     destroy() {
         this.stopTimer();
@@ -39,7 +45,7 @@ class ClaudeWorkspaceView {
 
     startTimer(updateCallback) {
         this.startTime = Date.now();
-        this.totalTokens = { input: 0, output: 0 };
+        this.totalTokens = { input: 0, cache_read: 0, cache_create: 0, output: 0, cost: 0 };
         updateCallback();
         this.timerInterval = setInterval(updateCallback, 100);
     }
@@ -136,7 +142,17 @@ class ClaudeChatComponent {
         this.inputEl.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                this.send();
+                // If currently processing, Enter does nothing (to avoid accidental send)
+                const view = this.getActiveView();
+                if (!view?.isProcessing) this.send();
+            }
+            // Ctrl+C to abort while processing
+            if (e.key === 'c' && e.ctrlKey && !this.inputEl.selectionStart && !this.inputEl.selectionEnd) {
+                const view = this.getActiveView();
+                if (view?.isProcessing) {
+                    e.preventDefault();
+                    this.abort();
+                }
             }
         });
 
@@ -145,7 +161,14 @@ class ClaudeChatComponent {
             this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 120) + 'px';
         });
 
-        this.sendBtn.addEventListener('click', () => this.send());
+        this.sendBtn.addEventListener('click', () => {
+            const view = this.getActiveView();
+            if (view?.isProcessing) {
+                this.abort();
+            } else {
+                this.send();
+            }
+        });
         this.container.querySelector('#claudeResetBtn').addEventListener('click', () => this.reset());
         this.container.querySelector('#claudeClearBtn').addEventListener('click', () => this.clearDisplay());
         this.container.querySelector('#claudeCompactBtn').addEventListener('click', () => this.compactContext());
@@ -197,16 +220,10 @@ class ClaudeChatComponent {
 
         // Quick action buttons (forced Haiku 4.5)
         this.container.querySelector('#claudeCommitBtn').addEventListener('click', () => {
-            this.sendQuick(
-                '請執行 git add . && git commit && git push。先 git status 看看改了什麼，根據 diff 寫一個簡潔的 commit message (中文，描述 why 而非 what)，然後 push 到 origin。',
-                'claude-haiku-4-5-20251001'
-            );
+            this.sendQuick('commit 然後 push', 'claude-haiku-4-5-20251001');
         });
         this.container.querySelector('#claudeChangelogBtn').addEventListener('click', () => {
-            this.sendQuick(
-                '請更新 CHANGELOG.md。先看一下最近的 git log 和未提交的改動，然後在 CHANGELOG.md 適當位置加入今日的更新項目（用中文，簡潔描述變更）。',
-                'claude-haiku-4-5-20251001'
-            );
+            this.sendQuick('更新 CHANGELOG', 'claude-haiku-4-5-20251001');
         });
 
         // Event delegation: double-click any file path to open it in editor
@@ -239,6 +256,13 @@ class ClaudeChatComponent {
             const { terminalId } = event.payload;
             this.handleBgTaskExit(terminalId);
         }).then(unlisten => { this._exitUnlisten = unlisten; });
+
+        // Also listen for our sentinel-based bg task done custom event
+        // (more reliable than terminal-exit for interactive shells that don't cleanly exit)
+        window.addEventListener('bg-task-done', (e) => {
+            const { tabId, terminalId } = e.detail;
+            this.handleBgTaskExit(terminalId);
+        });
     }
 
     // ========== Workspace management ==========
@@ -303,10 +327,12 @@ class ClaudeChatComponent {
         }
 
         const t = view.totalTokens;
-        if (t.output > 0 || t.input > 0 || t.cache > 0) {
+        const hasData = t.output > 0 || t.input > 0 || t.cache_read > 0 || t.cache_create > 0;
+        if (hasData) {
             const parts = [];
             if (t.input > 0) parts.push(`↓${this.formatTokens(t.input)}`);
-            if (t.cache > 0) parts.push(`💾${this.formatTokens(t.cache)}`);
+            if (t.cache_create > 0) parts.push(`📝${this.formatTokens(t.cache_create)}`);
+            if (t.cache_read > 0) parts.push(`💾${this.formatTokens(t.cache_read)}`);
             if (t.output > 0) parts.push(`↑${this.formatTokens(t.output)}`);
             if (t.cost > 0) parts.push(`$${t.cost.toFixed(4)}`);
             this.tokensEl.textContent = parts.join(' ');
@@ -324,8 +350,24 @@ class ClaudeChatComponent {
     updateButtonState() {
         const view = this.getActiveView();
         const processing = view?.isProcessing || false;
-        this.sendBtn.disabled = processing;
-        this.inputEl.disabled = processing;
+
+        // Input stays enabled so user can type next message while waiting
+        this.inputEl.disabled = false;
+
+        // During processing, send button becomes abort button
+        if (processing) {
+            this.sendBtn.disabled = false;
+            this.sendBtn.textContent = '⏹';
+            this.sendBtn.title = '中止 (Ctrl+C)';
+            this.sendBtn.classList.add('is-abort');
+        } else {
+            this.sendBtn.disabled = false;
+            this.sendBtn.textContent = '▶';
+            this.sendBtn.title = '送出 (Enter)';
+            this.sendBtn.classList.remove('is-abort');
+        }
+
+        // Keep the separate abort button in the action row too (fallback)
         this.container.querySelector('#claudeAbortBtn').style.display = processing ? 'inline-flex' : 'none';
     }
 
@@ -540,7 +582,8 @@ class ClaudeChatComponent {
 
             case 'usage':
                 view.totalTokens.input += data.input_tokens || 0;
-                view.totalTokens.cache += (data.cache_read || 0) + (data.cache_create || 0);
+                view.totalTokens.cache_read += data.cache_read || 0;
+                view.totalTokens.cache_create += data.cache_create || 0;
                 view.totalTokens.output += data.output_tokens || 0;
                 if (this.activeWorkspaceId === workspaceId) this.refreshStatusBar();
                 break;
@@ -553,7 +596,7 @@ class ClaudeChatComponent {
                 this.hideThinking(view);
 
                 // Append per-turn stats footer (also accumulates cost into totalTokens)
-                this.addTurnStats(view, data);
+                this.addTurnStats(view, data, workspaceId);
 
                 if (this.activeWorkspaceId === workspaceId) {
                     this.refreshStatusBar();
@@ -845,25 +888,33 @@ class ClaudeChatComponent {
         this.scrollToBottom(view);
     }
 
-    addTurnStats(view, data) {
+    addTurnStats(view, data, workspaceId) {
         // Track total cost
         if (data.cost) view.totalTokens.cost += data.cost;
 
         const duration = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) + 's' : '-';
         const newIn = data.input_tokens || 0;
-        const cacheTokens = (data.cache_read_tokens || 0) + (data.cache_creation_tokens || 0);
+        const cacheRead = data.cache_read_tokens || 0;
+        const cacheCreate = data.cache_creation_tokens || 0;
         const outTokens = data.output_tokens || 0;
         const cost = data.cost ? `$${data.cost.toFixed(4)}` : '';
         const turns = data.num_turns && data.num_turns > 1 ? `${data.num_turns} turns` : '';
         const aborted = data.aborted ? '<span class="stats-aborted">已中止</span>' : '';
 
+        // Fire-and-forget: push this turn to Supabase llm_usage
+        this.logUsageRemote(data, workspaceId).catch(e => {
+            console.warn('[llm_usage] upload failed:', e);
+        });
+
         const parts = [`<span class="stat-item">⏱ ${duration}</span>`];
 
+        // Build token breakdown: new input ↓, cache create 📝, cache read 💾, output ↑
         const tokenParts = [];
-        if (newIn > 0) tokenParts.push(`↓${this.formatTokens(newIn)}`);
-        if (cacheTokens > 0) tokenParts.push(`💾${this.formatTokens(cacheTokens)}`);
-        if (outTokens > 0) tokenParts.push(`↑${this.formatTokens(outTokens)}`);
-        if (tokenParts.length) parts.push(`<span class="stat-item" title="新輸入↓ / 快取💾 / 輸出↑">${tokenParts.join(' ')}</span>`);
+        if (newIn > 0) tokenParts.push(`<span class="tk-new" title="新輸入 (全價)">↓${this.formatTokens(newIn)}</span>`);
+        if (cacheCreate > 0) tokenParts.push(`<span class="tk-cwrite" title="寫入快取 (1.25x)">📝${this.formatTokens(cacheCreate)}</span>`);
+        if (cacheRead > 0) tokenParts.push(`<span class="tk-cread" title="讀取快取 (0.1x)">💾${this.formatTokens(cacheRead)}</span>`);
+        if (outTokens > 0) tokenParts.push(`<span class="tk-out" title="輸出">↑${this.formatTokens(outTokens)}</span>`);
+        if (tokenParts.length) parts.push(`<span class="stat-item stat-tokens">${tokenParts.join(' ')}</span>`);
 
         if (cost) parts.push(`<span class="stat-item">${cost}</span>`);
         if (turns) parts.push(`<span class="stat-item">${turns}</span>`);
@@ -878,6 +929,29 @@ class ClaudeChatComponent {
 
     scrollToBottom(view) {
         view.messagesEl.scrollTop = view.messagesEl.scrollHeight;
+    }
+
+    async logUsageRemote(data, workspaceId) {
+        const ws = workspaceManager?.workspaces?.find(w => w.id === workspaceId);
+        const payload = {
+            session_id: ws?.claudeSessionId || null,
+            num_turns: data.num_turns || null,
+            is_subagent: false,
+            aborted: !!data.aborted,
+            project_name: ws?.projectName || ws?.name || null,
+            project_path: ws?.projectPath || null,
+            model: this.modelSelect?.value || null,
+            input_tokens: data.input_tokens || 0,
+            cache_creation_tokens: data.cache_creation_tokens || 0,
+            cache_read_tokens: data.cache_read_tokens || 0,
+            output_tokens: data.output_tokens || 0,
+            cost_usd: data.cost || 0,
+            duration_ms: data.duration_ms || 0,
+            thinking_enabled: !!this.thinkingEnabled,
+            prompt_mode: this.promptModeSelect?.value || null,
+            error: (!data.success && !data.aborted) ? 'turn failed' : null,
+        };
+        await window.__TAURI__.core.invoke('log_llm_usage', { payload });
     }
 
     // ========== Actions ==========
@@ -1002,13 +1076,21 @@ class ClaudeChatComponent {
             }
         }
 
+        // Remove from tracking first (prevents re-entry)
+        this.bgTasks.delete(terminalId);
+
         // Auto-switch back to Claude mode so user sees the notification
         if (window.app?.switchMode) {
             window.app.switchMode('claude');
         }
 
-        // Remove from tracking (keep card visible)
-        this.bgTasks.delete(terminalId);
+        // Auto-close the terminal tab after a short delay (release RAM).
+        // Delay lets the user briefly see the final output if they're looking.
+        if (task.tabId && typeof terminal !== 'undefined' && terminal.closeTab) {
+            setTimeout(() => {
+                terminal.closeTab(task.tabId);
+            }, 1500);
+        }
     }
 
     modelSupportsThinking(model) {
@@ -1166,7 +1248,7 @@ class ClaudeChatComponent {
 
         // Clear display
         view.messagesEl.innerHTML = '';
-        view.totalTokens = { input: 0, cache: 0, output: 0, cost: 0 };
+        view.totalTokens = { input: 0, cache_read: 0, cache_create: 0, output: 0, cost: 0 };
         view.currentAssistantEl = null;
         view.pendingTools.clear();
 
@@ -1232,7 +1314,7 @@ class ClaudeChatComponent {
             `;
             view.currentAssistantEl = null;
             view.pendingTools.clear();
-            view.totalTokens = { input: 0, output: 0 };
+            view.totalTokens = { input: 0, cache_read: 0, cache_create: 0, output: 0, cost: 0 };
             view.stopTimer();
             view.startTime = null;
         }
@@ -1244,38 +1326,78 @@ class ClaudeChatComponent {
     renderMarkdown(text) {
         if (!text) return '';
         let html = text;
+
+        // Escape HTML
         html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (m, lang, code) => `<pre><code class="language-${lang}">${code.trim()}</code></pre>`);
+
+        // Code blocks (protect from further processing)
+        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (m, lang, code) =>
+            `<pre><code class="language-${lang}">${code.trim()}</code></pre>`);
+
+        // Inline code
         html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Headers
         html = html.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
         html = html.replace(/^#####\s+(.*)$/gm, '<h5>$1</h5>');
         html = html.replace(/^####\s+(.*)$/gm, '<h4>$1</h4>');
         html = html.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
         html = html.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
         html = html.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>');
+
+        // Bold / italic
         html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
         html = html.replace(/___(.+?)___/g, '<strong><em>$1</em></strong>');
         html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-        html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+        // Only match single * / _ that aren't adjacent to other * / _
+        html = html.replace(/(^|[^*])\*([^*\n]+?)\*([^*]|$)/g, '$1<em>$2</em>$3');
+        html = html.replace(/(^|[^_])_([^_\n]+?)_([^_]|$)/g, '$1<em>$2</em>$3');
         html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+        // Links
         html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+        // HR
         html = html.replace(/^[-*_]{3,}$/gm, '<hr>');
+
+        // Blockquote
         html = html.replace(/^&gt;\s+(.*)$/gm, '<blockquote>$1</blockquote>');
         html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
-        html = html.replace(/^[\*\-]\s+(.*)$/gm, '<li>$1</li>');
-        html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-        html = html.replace(/^\d+\.\s+(.*)$/gm, '<li>$1</li>');
+
+        // ---- Lists (improved) ----
+        // Mark unordered and ordered list items distinctly, then wrap consecutive
+        // items (tolerating blank lines between them) in proper <ul>/<ol>.
+        html = html.replace(/^[\*\-]\s+(.*)$/gm, '<liu>$1</liu>');
+        html = html.replace(/^\d+\.\s+(.*)$/gm, '<lio>$1</lio>');
+
+        // Wrap consecutive unordered items (allow blank lines between)
+        html = html.replace(/(<liu>[^\n]*<\/liu>(?:\s*\n\s*<liu>[^\n]*<\/liu>)*)/g, (match) => {
+            const items = match.replace(/<liu>/g, '<li>').replace(/<\/liu>/g, '</li>').replace(/\s+/g, ' ');
+            return `<ul>${items}</ul>`;
+        });
+        // Wrap consecutive ordered items
+        html = html.replace(/(<lio>[^\n]*<\/lio>(?:\s*\n\s*<lio>[^\n]*<\/lio>)*)/g, (match) => {
+            const items = match.replace(/<lio>/g, '<li>').replace(/<\/lio>/g, '</li>').replace(/\s+/g, ' ');
+            return `<ol>${items}</ol>`;
+        });
+        // Safety: any leftover <liu>/<lio> becomes a plain <li> wrapped in <ul>
+        html = html.replace(/<liu>/g, '<li>').replace(/<\/liu>/g, '</li>');
+        html = html.replace(/<lio>/g, '<li>').replace(/<\/lio>/g, '</li>');
+
+        // Tables
         html = html.replace(/^\|(.+)\|$/gm, (match, content) => {
             const cells = content.split('|').map(c => c.trim());
             if (cells.every(c => /^[-:]+$/.test(c))) return '';
             return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
         });
         html = html.replace(/(<tr>.*<\/tr>\n?)+/g, '<table>$&</table>');
-        html = html.replace(/^(?!<[a-z]|$)(.+)$/gm, '<p>$1</p>');
+
+        // Paragraphs — wrap lines that don't start with a tag
+        html = html.replace(/^(?!<[a-z/]|$)(.+)$/gm, '<p>$1</p>');
         html = html.replace(/<p>\s*<\/p>/g, '');
         html = html.replace(/\n\n+/g, '\n');
+
         return html;
     }
 

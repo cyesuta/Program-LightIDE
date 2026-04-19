@@ -933,13 +933,24 @@
     font-weight: 600;
 }
 
-.claude-msg-assistant .claude-msg-content ul {
+.claude-msg-assistant .claude-msg-content ul,
+.claude-msg-assistant .claude-msg-content ol {
     margin: 4px 0;
-    padding-left: 20px;
+    padding-left: 24px;
+    list-style-position: outside;
 }
 
 .claude-msg-assistant .claude-msg-content li {
     margin: 2px 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+/* Safety: any bare <li> without parent list still shows inside bubble */
+.claude-msg-assistant .claude-msg-content > li,
+.claude-msg-assistant .claude-msg-content p > li {
+    list-style: disc;
+    margin-left: 24px;
 }
 
 .claude-msg-assistant .claude-msg-content blockquote {
@@ -994,6 +1005,27 @@
 
 .claude-turn-stats .stat-item:first-child {
     color: var(--success);
+}
+
+.claude-turn-stats .stat-tokens {
+    display: inline-flex;
+    gap: 8px;
+}
+
+.claude-turn-stats .tk-new {
+    color: #f7d83c;
+}
+
+.claude-turn-stats .tk-cwrite {
+    color: #ff9a6b;
+}
+
+.claude-turn-stats .tk-cread {
+    color: #7ed6ff;
+}
+
+.claude-turn-stats .tk-out {
+    color: #a371f7;
 }
 
 .claude-turn-stats .stats-aborted {
@@ -1553,6 +1585,15 @@
     background: var(--bg-tertiary);
     color: var(--text-muted);
     cursor: not-allowed;
+}
+
+.claude-send-btn.is-abort {
+    background: var(--error);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.claude-send-btn.is-abort:hover {
+    background: #d13030;
 }
 
 .claude-actions {

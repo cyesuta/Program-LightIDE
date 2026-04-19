@@ -160,6 +160,24 @@ class TerminalTab {
                 // Only process events for this terminal tab
                 if (eventTermId === terminalId && this.isConnected && this.term) {
                     this.term.write(data);
+
+                    // Detect bg task sentinel — use a rolling buffer so a
+                    // sentinel split across chunks is still detected.
+                    if (this._bgSentinel) {
+                        this._bgSentinelBuf = (this._bgSentinelBuf || '') + data;
+                        // Keep buffer bounded — sentinel is ~40 chars; keep last 500
+                        if (this._bgSentinelBuf.length > 500) {
+                            this._bgSentinelBuf = this._bgSentinelBuf.slice(-500);
+                        }
+                        if (this._bgSentinelBuf.includes(this._bgSentinel)) {
+                            const sentinel = this._bgSentinel;
+                            this._bgSentinel = null;
+                            this._bgSentinelBuf = null;
+                            window.dispatchEvent(new CustomEvent('bg-task-done', {
+                                detail: { tabId: this.id, terminalId: this.terminalId }
+                            }));
+                        }
+                    }
                 }
             }).then(unlisten => {
                 this._outputUnlisten = unlisten;
@@ -392,12 +410,16 @@ class TerminalComponent {
             label: `⚡ ${command.substring(0, 20)}${command.length > 20 ? '...' : ''}`,
         });
 
-        // Wait a bit for terminal to be ready, then send the command.
-        // Append `; exit` so the shell terminates when the command finishes,
-        // which fires the terminal-exit event so we can auto-switch back.
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // Wait for shell to initialize, then send the wrapped command.
+        // We append a sentinel marker echo after the command so we can detect
+        // completion from the output stream (more reliable than trying to
+        // make interactive bash exit cleanly).
+        await new Promise(resolve => setTimeout(resolve, 1000));
         if (tab.isConnected) {
-            const wrapped = `${command}; exit\n`;
+            const sentinel = `__LIGHTIDE_BG_DONE_${Date.now()}__`;
+            tab._bgSentinel = sentinel;
+            // Run command, then echo sentinel (runs even if command fails)
+            const wrapped = `${command}; echo "${sentinel}"\n`;
             await tab.sendInput(wrapped);
         }
 

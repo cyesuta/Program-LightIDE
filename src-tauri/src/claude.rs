@@ -50,6 +50,11 @@ pub fn ensure_sidecar(app: &AppHandle) -> Result<(), String> {
 
     // Find sidecar script - try several locations
     let candidates = vec![
+        // Compile-time absolute path: lets the packaged exe find the script
+        // at the project location it was built from. Personal-use only — if
+        // the project moves, rebuild.
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/claude-sidecar.mjs"),
         std::path::PathBuf::from("../src/claude-sidecar.mjs"),
         std::env::current_dir()
             .unwrap_or_default()

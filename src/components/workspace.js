@@ -212,6 +212,19 @@ class WorkspaceManager {
             this.activeId = null; // Force switch
             await this.switchTo(activeId);
             this.renderTabs();
+
+            // Scroll all chat views to the bottom so user sees the latest messages
+            const chat = window.app?.claudeChat;
+            if (chat) {
+                // Use requestAnimationFrame + timeout to ensure layout is ready
+                setTimeout(() => {
+                    for (const view of chat.views.values()) {
+                        if (view.messagesEl) {
+                            view.messagesEl.scrollTop = view.messagesEl.scrollHeight;
+                        }
+                    }
+                }, 100);
+            }
             return true;
         } catch (e) {
             console.error('Failed to restore workspaces:', e);

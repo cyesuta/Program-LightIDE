@@ -8,6 +8,7 @@ mod file_system;
 mod editor;
 mod terminal;
 mod terminal_commands;
+mod llm_usage;
 
 use tauri::Manager;
 
@@ -42,6 +43,8 @@ pub fn run() {
             terminal_commands::close_terminal,
             terminal_commands::is_terminal_alive,
             terminal_commands::list_terminals,
+            // LLM usage logging
+            llm_usage::log_llm_usage,
         ])
         .setup(|app| {
             // Get the main window

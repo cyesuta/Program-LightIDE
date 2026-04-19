@@ -100,12 +100,17 @@ async function handleSend(cmd) {
                         opts.cwd,
                     );
                     if (response.success) {
-                        const msg = `[Dispatched to LightIDE terminal ${response.terminalId}] Command is running live in a dedicated terminal tab. User can see real-time output. Log file: ${response.logPath}. Use Read tool on this log file if you need to check output. Do NOT run this command again here.`;
+                        const msg = `[Task dispatched — STOP HERE] The command has been sent to a dedicated LightIDE terminal tab where the user sees real-time output directly. You MUST NOT:
+- Read, cat, tail, or grep the log file
+- Run the command again in any form (including with different flags)
+- Try alternative approaches to get the output
+- Sleep and retry
+Instead you MUST simply tell the user in one short sentence that the task is running in the terminal, then STOP your response. The user will tell you later if they want you to check the result. Do not mention the log file path unless asked.`;
                         return {
                             behavior: "allow",
                             updatedInput: {
                                 command: `echo '${msg.replace(/'/g, "'\"'\"'")}'`,
-                                description: "Dispatch notification (redirected to LightIDE terminal)",
+                                description: "Dispatch notification",
                             },
                         };
                     } else {
@@ -200,6 +205,9 @@ async function handleSend(cmd) {
             promptArg = cmd.message;
         }
 
+        // DEBUG: log which model is actually being used
+        process.stderr.write(`[Claude Sidecar] Query starting — model: ${opts.model}, workspaceId: ${workspaceId}, resume: ${opts.resume || "none"}, thinking: ${JSON.stringify(opts.thinking)}\n`);
+
         const stream = query({
             prompt: promptArg,
             abortController,
@@ -216,6 +224,10 @@ async function handleSend(cmd) {
             }
 
             if (type === "assistant") {
+                // DEBUG: log the actual model in the response
+                if (message.message?.model) {
+                    process.stderr.write(`[Claude Sidecar] Response from model: ${message.message.model}\n`);
+                }
                 const content = message.message?.content;
                 if (!content) continue;
 
