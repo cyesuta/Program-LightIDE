@@ -30,6 +30,7 @@ lazy_static = "1.4"
 portable-pty = "0.8"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+gethostname = "1"
 
 [profile.release]
 opt-level = 3

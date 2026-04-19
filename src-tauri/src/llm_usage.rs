@@ -213,11 +213,17 @@ pub async fn log_llm_usage(mut payload: LlmUsagePayload) -> Result<(), String> {
         payload.provider = Some("anthropic".to_string());
     }
     if payload.hostname.is_none() {
-        payload.hostname = Some(
+        // Prefer system API (preserves original case "Cyesuta-PC2");
+        // Windows $COMPUTERNAME is always uppercased ("CYESUTA-PC2") which would
+        // produce inconsistent rows vs Node's os.hostname() used by the CLI hook.
+        let hn = gethostname::gethostname().to_string_lossy().to_string();
+        payload.hostname = Some(if hn.is_empty() {
             std::env::var("COMPUTERNAME")
                 .or_else(|_| std::env::var("HOSTNAME"))
-                .unwrap_or_else(|_| "unknown".to_string()),
-        );
+                .unwrap_or_else(|_| "unknown".to_string())
+        } else {
+            hn
+        });
     }
     if payload.os.is_none() {
         let mapped = match std::env::consts::OS {
