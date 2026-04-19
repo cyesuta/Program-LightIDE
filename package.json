@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.101",
-    "esbuild-wasm": "^0.27.2"
+    "esbuild-wasm": "^0.27.2",
+    "node-pty": "^1.1.0"
   }
 }
