@@ -17,11 +17,21 @@ class FileTreeComponent {
 
         // Event delegation — single listener for all tree items
         this.container.addEventListener('click', (e) => {
+            // Ignore clicks while an inline edit input is active
+            if (e.target.closest('.tree-edit-input')) return;
             const el = e.target.closest('.tree-item');
-            if (!el) return;
+            if (!el || el.classList.contains('tree-item-editing')) return;
             const path = el.dataset.path;
             const item = this.findItemByPath(state.fileTree, path);
             if (item) this.handleItemClick(item);
+        });
+        this.container.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.tree-edit-input')) return;
+            const el = e.target.closest('.tree-item');
+            if (!el) return;
+            e.preventDefault();
+            const item = this.findItemByPath(state.fileTree, el.dataset.path);
+            if (item) this.rename(item);
         });
         this.container.addEventListener('auxclick', (e) => {
             if (e.button !== 1) return;
@@ -29,14 +39,21 @@ class FileTreeComponent {
             if (!el) return;
             e.preventDefault();
             const item = this.findItemByPath(state.fileTree, el.dataset.path);
-            if (item) this.rename(item);
+            if (item) this.copyPath(item);
         });
         this.container.addEventListener('contextmenu', (e) => {
             const el = e.target.closest('.tree-item');
-            if (!el) return;
+            if (!el) {
+                // Right-click on empty area → menu for project root
+                if (state.projectPath) {
+                    e.preventDefault();
+                    this.showContextMenu(e, { path: state.projectPath, name: '', isDir: true, isRoot: true });
+                }
+                return;
+            }
             e.preventDefault();
             const item = this.findItemByPath(state.fileTree, el.dataset.path);
-            if (item) this.copyPath(item);
+            if (item) this.showContextMenu(e, item);
         });
 
         // Close context menu on click elsewhere
@@ -51,6 +68,35 @@ class FileTreeComponent {
                 }
             });
         }
+
+        // New folder button (root-level)
+        const newFolderBtn = document.getElementById('newFolderBtn');
+        if (newFolderBtn) {
+            newFolderBtn.addEventListener('click', () => {
+                if (state.projectPath) this.beginCreate(state.projectPath, true);
+            });
+        }
+        // New file button (root-level)
+        const newFileBtn = document.getElementById('newFileBtn');
+        if (newFileBtn) {
+            newFileBtn.addEventListener('click', () => {
+                if (state.projectPath) this.beginCreate(state.projectPath, false);
+            });
+        }
+    }
+
+    // Path helpers — work with both \ and / separators
+    pathSep(p) {
+        return p.includes('\\') ? '\\' : '/';
+    }
+    parentDir(p) {
+        const sep = this.pathSep(p);
+        const idx = p.lastIndexOf(sep);
+        return idx > 0 ? p.substring(0, idx) : p;
+    }
+    joinPath(parent, name) {
+        const sep = this.pathSep(parent);
+        return parent.endsWith(sep) ? parent + name : parent + sep + name;
     }
 
     findItemByPath(items, path) {
@@ -258,13 +304,16 @@ class FileTreeComponent {
         menu.style.left = `${event.clientX}px`;
         menu.style.top = `${event.clientY}px`;
 
-        const menuItems = [
+        const menuItems = item.isRoot ? [
+            { icon: '📄', label: '新增檔案', action: () => this.createFile(item) },
+            { icon: '📁', label: '新增資料夾', action: () => this.createFolder(item) },
+        ] : [
             { icon: '📋', label: '複製路徑', action: () => this.copyPath(item) },
             { separator: true },
             { icon: '📄', label: '新增檔案', action: () => this.createFile(item) },
             { icon: '📁', label: '新增資料夾', action: () => this.createFolder(item) },
             { separator: true },
-            { icon: '✏️', label: '重新命名', shortcut: 'F2', action: () => this.rename(item) },
+            { icon: '✏️', label: '重新命名', shortcut: 'F2 / 雙擊', action: () => this.rename(item) },
             { separator: true },
             { icon: '🗑️', label: '刪除', class: 'danger', action: () => this.delete(item) }
         ];
@@ -303,13 +352,99 @@ class FileTreeComponent {
     }
 
     createFile(item) {
-        // TODO: Implement file creation dialog
-        console.log('Create file in:', item.isDir ? item.path : item.path.substring(0, item.path.lastIndexOf('\\')));
+        const parentDir = item.isDir ? item.path : this.parentDir(item.path);
+        this.beginCreate(parentDir, false);
     }
 
     createFolder(item) {
-        // TODO: Implement folder creation dialog
-        console.log('Create folder in:', item.isDir ? item.path : item.path.substring(0, item.path.lastIndexOf('\\')));
+        const parentDir = item.isDir ? item.path : this.parentDir(item.path);
+        this.beginCreate(parentDir, true);
+    }
+
+    // Show an inline input under a parent dir, then create the file/folder.
+    async beginCreate(parentDir, isDir) {
+        // Make sure parent is expanded (so the new entry is visible)
+        if (parentDir !== state.projectPath && !state.isFolderExpanded(parentDir)) {
+            state.toggleFolder(parentDir);
+            const parentItem = this.findItemByPath(state.fileTree, parentDir);
+            if (parentItem && (parentItem.children === null || parentItem.children === undefined)) {
+                await this.loadChildren(parentDir, 0);
+            }
+        }
+
+        // Create a placeholder row at the end of the parent's children
+        const parentItem = parentDir === state.projectPath ? null : this.findItemByPath(state.fileTree, parentDir);
+        const depth = parentItem ? this.computeDepth(state.fileTree, parentDir, 0) + 1 : 0;
+
+        // Build a temporary row
+        const row = document.createElement('div');
+        row.className = `tree-item ${isDir ? 'folder' : 'file'} tree-item-creating`;
+        row.dataset.depth = String(depth);
+        row.innerHTML = `
+            <span class="tree-arrow${isDir ? '' : ' hidden'}">${isDir ? '▶' : ''}</span>
+            <span class="tree-icon ${isDir ? 'folder' : 'file-default'}"></span>
+            <input type="text" class="tree-edit-input" placeholder="${isDir ? '新資料夾' : '新檔案'}" />
+        `;
+
+        // Insert row: under the parent's last child, or at top-level if root
+        if (parentDir === state.projectPath) {
+            this.container.appendChild(row);
+        } else {
+            // Find parent row in DOM
+            const parentEl = this.container.querySelector(`[data-path="${CSS.escape(parentDir)}"]`);
+            if (parentEl) {
+                // Insert after the last descendant row of parentEl
+                let after = parentEl;
+                let next = parentEl.nextElementSibling;
+                while (next && parseInt(next.dataset.depth || '0') >= depth) {
+                    after = next;
+                    next = next.nextElementSibling;
+                }
+                after.insertAdjacentElement('afterend', row);
+            } else {
+                this.container.appendChild(row);
+            }
+        }
+
+        const input = row.querySelector('.tree-edit-input');
+        input.focus();
+
+        let done = false;
+        const finish = async (commit) => {
+            if (done) return;
+            done = true;
+            const name = input.value.trim();
+            row.remove();
+            if (!commit || !name) return;
+            const newPath = this.joinPath(parentDir, name);
+            try {
+                const cmd = isDir ? 'create_directory' : 'create_file';
+                const result = await window.__TAURI__.core.invoke(cmd, { path: newPath });
+                if (result.success && state.projectPath) {
+                    await this.loadDirectory(state.projectPath);
+                } else if (!result.success) {
+                    alert(`建立失敗: ${result.error}`);
+                }
+            } catch (e) {
+                alert(`建立失敗: ${e.message || e}`);
+            }
+        };
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+    }
+
+    computeDepth(items, target, depth) {
+        for (const it of items) {
+            if (it.path === target) return depth;
+            if (it.children) {
+                const d = this.computeDepth(it.children, target, depth + 1);
+                if (d >= 0) return d;
+            }
+        }
+        return -1;
     }
 
     rename(item) {
@@ -317,35 +452,48 @@ class FileTreeComponent {
         if (!element) return;
         const nameSpan = element.querySelector('.tree-name');
         if (!nameSpan) return;
+        element.classList.add('tree-item-editing');
         const originalName = item.name;
         const input = document.createElement('input');
         input.type = 'text';
+        input.className = 'tree-edit-input';
         input.value = originalName;
-        input.style.cssText = 'width:calc(100% - 40px);padding:1px 4px;font-size:inherit;background:var(--bg-primary);border:1px solid var(--accent);color:var(--text-primary);outline:none;border-radius:2px;';
         nameSpan.style.display = 'none';
         nameSpan.parentNode.appendChild(input);
         input.focus();
         if (!item.isDir && originalName.includes('.')) input.setSelectionRange(0, originalName.lastIndexOf('.'));
         else input.select();
         let done = false;
-        const finish = async () => {
+        const finish = async (commit) => {
             if (done) return;
             done = true;
             const newName = input.value.trim();
             input.remove();
             nameSpan.style.display = '';
-            if (newName && newName !== originalName) {
-                const parentPath = item.path.substring(0, item.path.lastIndexOf('\\\\'));
-                const newPath = parentPath + '\\\\' + newName;
-                const result = await window.__TAURI__.core.invoke('rename_path', { oldPath: item.path, newPath: newPath });
-                if (result.success && state.projectPath) this.loadDirectory(state.projectPath);
+            element.classList.remove('tree-item-editing');
+            if (!commit || !newName || newName === originalName) return;
+            const parentPath = this.parentDir(item.path);
+            const newPath = this.joinPath(parentPath, newName);
+            try {
+                const result = await window.__TAURI__.core.invoke('rename_path', { oldPath: item.path, newPath });
+                if (result.success && state.projectPath) {
+                    this.loadDirectory(state.projectPath);
+                } else if (!result.success) {
+                    alert(`重新命名失敗: ${result.error}`);
+                }
+            } catch (e) {
+                alert(`重新命名失敗: ${e.message || e}`);
             }
         };
-        input.addEventListener('blur', finish);
+        input.addEventListener('blur', () => finish(true));
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-            else if (e.key === 'Escape') { input.value = originalName; input.blur(); }
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
         });
+        // Don't let click on input bubble up and trigger tree-item click
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('dblclick', (e) => e.stopPropagation());
     }
 
     async copyPath(item) {

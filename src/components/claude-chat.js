@@ -235,6 +235,15 @@ class ClaudeChatComponent {
         });
     }
 
+    scheduleTreeRefresh() {
+        clearTimeout(this._treeRefreshTimer);
+        this._treeRefreshTimer = setTimeout(() => {
+            if (typeof fileTree !== 'undefined' && state?.projectPath) {
+                fileTree.loadDirectory(state.projectPath);
+            }
+        }, 300);
+    }
+
     async openFileInEditor(path) {
         if (typeof fileTree === 'undefined') return;
         try {
@@ -572,6 +581,12 @@ class ClaudeChatComponent {
                         if (!data.is_error && toolEl.dataset.filePath && typeof editor !== 'undefined') {
                             editor.reloadFile(toolEl.dataset.filePath);
                         }
+
+                        // If a Write/Edit/MultiEdit (or any file-touching tool) succeeded,
+                        // refresh the file tree so newly created files appear.
+                        if (!data.is_error && toolEl.dataset.toolName && typeof fileTree !== 'undefined' && state?.projectPath) {
+                            this.scheduleTreeRefresh();
+                        }
                     }
 
                     view.pendingTools.delete(data.id);
@@ -706,6 +721,10 @@ class ClaudeChatComponent {
         // Track file path on the element for auto-reload after tool_result
         if (isFileEdit && block.input?.file_path) {
             toolEl.dataset.filePath = block.input.file_path;
+            toolEl.dataset.toolName = toolName;
+        }
+        // Mark Bash too — it might create/modify files; we'll refresh the tree on success
+        if (toolName === 'Bash') {
             toolEl.dataset.toolName = toolName;
         }
 

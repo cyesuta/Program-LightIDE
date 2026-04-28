@@ -107,8 +107,12 @@ class WorkspaceManager {
         this.idCounter = 0;
         this.tabBarEl = null;
         this.STORAGE_KEY = 'lightide-workspaces';
-        this.CHAT_STORAGE_KEY = 'lightide-claude-chats';
+        this.CHAT_STORAGE_KEY = 'lightide-claude-chats'; // legacy localStorage key, kept for migration
+        this.IDB_NAME = 'lightide';
+        this.IDB_STORE = 'chats';
+        this.MAX_DIFF_LINES_STORED = 200;
         this._saveTimer = null;
+        this._dbPromise = null;
     }
 
     async init() {
@@ -121,11 +125,126 @@ class WorkspaceManager {
             addBtn.addEventListener('click', () => this.createWorkspace());
         }
 
+        // One-time migration from old localStorage chat blob → IndexedDB (per-workspace key)
+        await this._migrateChatStorage();
+
         // Try to restore from localStorage
         const restored = await this.restore();
         if (!restored) {
             // No saved workspaces, create default
             this.createWorkspace();
+        }
+    }
+
+    // ---------- IndexedDB helpers (per-workspace, gzip-compressed) ----------
+
+    _openDB() {
+        if (this._dbPromise) return this._dbPromise;
+        this._dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.IDB_NAME, 1);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(this.IDB_STORE)) {
+                    db.createObjectStore(this.IDB_STORE);
+                }
+            };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        return this._dbPromise;
+    }
+
+    async _idbPut(key, value) {
+        const db = await this._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.IDB_STORE, 'readwrite');
+            tx.objectStore(this.IDB_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+    }
+
+    async _idbGet(key) {
+        const db = await this._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.IDB_STORE, 'readonly');
+            const req = tx.objectStore(this.IDB_STORE).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    async _idbDelete(key) {
+        const db = await this._openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.IDB_STORE, 'readwrite');
+            tx.objectStore(this.IDB_STORE).delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    // gzip-compress a string into a Uint8Array. IDB stores Uint8Array natively
+    // — no base64 step needed (and it would only inflate the size by ~33%).
+    async _compress(text) {
+        const cs = new CompressionStream('gzip');
+        const writer = cs.writable.getWriter();
+        writer.write(new TextEncoder().encode(text));
+        writer.close();
+        const buf = await new Response(cs.readable).arrayBuffer();
+        return new Uint8Array(buf);
+    }
+
+    async _decompress(bytes) {
+        const ds = new DecompressionStream('gzip');
+        const writer = ds.writable.getWriter();
+        writer.write(bytes);
+        writer.close();
+        const buf = await new Response(ds.readable).arrayBuffer();
+        return new TextDecoder().decode(buf);
+    }
+
+    // Trim huge diff blocks before storing — single Write of a 1k-line file
+    // would otherwise persist 1000 <div class="diff-line"> rows. We keep the
+    // first N lines and append a hint. Live UI is not affected.
+    _truncateDiffsForStorage(html) {
+        try {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            const max = this.MAX_DIFF_LINES_STORED;
+            for (const block of tmp.querySelectorAll('.diff-block')) {
+                const lines = Array.from(block.querySelectorAll('.diff-line'));
+                if (lines.length <= max) continue;
+                const removed = lines.length - max;
+                for (let i = max; i < lines.length; i++) lines[i].remove();
+                const note = document.createElement('div');
+                note.className = 'diff-truncated';
+                note.textContent = `... (儲存時截斷 ${removed} 行)`;
+                block.appendChild(note);
+            }
+            return tmp.innerHTML;
+        } catch {
+            return html;
+        }
+    }
+
+    async _migrateChatStorage() {
+        try {
+            const raw = localStorage.getItem(this.CHAT_STORAGE_KEY);
+            if (!raw) return;
+            const all = JSON.parse(raw);
+            for (const [wsId, entry] of Object.entries(all || {})) {
+                if (entry?.html) {
+                    const html = this._truncateDiffsForStorage(entry.html);
+                    const compressed = await this._compress(html);
+                    await this._idbPut(wsId, { html: compressed, tokens: entry.tokens || null, v: 1 });
+                }
+            }
+            localStorage.removeItem(this.CHAT_STORAGE_KEY);
+            console.log('[migration] Chat HTML moved from localStorage to IndexedDB');
+        } catch (e) {
+            console.warn('[migration] Skipped:', e);
         }
     }
 
@@ -153,30 +272,35 @@ class WorkspaceManager {
         this._saveTimer = setTimeout(() => this.save(), 300);
     }
 
-    saveChatHTML(workspaceId, html, tokens) {
+    async saveChatHTML(workspaceId, html, tokens) {
         try {
-            const all = JSON.parse(localStorage.getItem(this.CHAT_STORAGE_KEY) || '{}');
-            all[workspaceId] = { html, tokens };
-            localStorage.setItem(this.CHAT_STORAGE_KEY, JSON.stringify(all));
+            const trimmed = this._truncateDiffsForStorage(html);
+            const compressed = await this._compress(trimmed);
+            await this._idbPut(workspaceId, { html: compressed, tokens, v: 1 });
         } catch (e) {
             console.error('Failed to save chat:', e);
         }
     }
 
-    loadChatHTML(workspaceId) {
+    async loadChatHTML(workspaceId) {
         try {
-            const all = JSON.parse(localStorage.getItem(this.CHAT_STORAGE_KEY) || '{}');
-            return all[workspaceId] || null;
-        } catch {
+            const entry = await this._idbGet(workspaceId);
+            if (!entry) return null;
+            // v1: html is gzip Uint8Array. Pre-v1 (shouldn't exist after migration): plain string.
+            if (entry.html instanceof Uint8Array) {
+                const html = await this._decompress(entry.html);
+                return { html, tokens: entry.tokens };
+            }
+            return { html: entry.html || '', tokens: entry.tokens };
+        } catch (e) {
+            console.warn('Failed to load chat:', e);
             return null;
         }
     }
 
-    deleteChatHTML(workspaceId) {
+    async deleteChatHTML(workspaceId) {
         try {
-            const all = JSON.parse(localStorage.getItem(this.CHAT_STORAGE_KEY) || '{}');
-            delete all[workspaceId];
-            localStorage.setItem(this.CHAT_STORAGE_KEY, JSON.stringify(all));
+            await this._idbDelete(workspaceId);
         } catch {}
     }
 
@@ -199,7 +323,7 @@ class WorkspaceManager {
                 if (chat) {
                     const view = chat.getOrCreateView(ws.id);
                     view.hide();
-                    const saved = this.loadChatHTML(ws.id);
+                    const saved = await this.loadChatHTML(ws.id);
                     if (saved && saved.html) {
                         view.messagesEl.innerHTML = saved.html;
                         if (saved.tokens) view.totalTokens = saved.tokens;
@@ -283,11 +407,28 @@ class WorkspaceManager {
         this.saveChatHTML(workspaceId, view.messagesEl.innerHTML, view.totalTokens);
     }
 
-    closeWorkspace(id) {
+    async closeWorkspace(id) {
         if (this.workspaces.length <= 1) return; // Keep at least one
 
         const idx = this.workspaces.findIndex(w => w.id === id);
         if (idx < 0) return;
+
+        const ws = this.workspaces[idx];
+        // Confirm before closing
+        const chat = window.app?.claudeChat;
+        const confirmFn = chat?.showConfirm?.bind(chat);
+        if (confirmFn) {
+            const ok = await confirmFn({
+                icon: '⚠️',
+                title: '關閉工作區',
+                body: `關閉「${ws.getDisplayName()}」？\n此工作區的對話記錄與 Claude session 將被清除。`,
+                confirmText: '關閉',
+                cancelText: '取消',
+            });
+            if (!ok) return;
+        } else if (!confirm(`確定要關閉「${ws.getDisplayName()}」嗎？`)) {
+            return;
+        }
 
         // Send reset command to sidecar to clear session
         if (window.__TAURI__?.core?.invoke) {
@@ -295,7 +436,6 @@ class WorkspaceManager {
         }
 
         // Remove chat view and saved chat
-        const chat = window.app?.claudeChat;
         if (chat) chat.removeWorkspace(id);
         this.deleteChatHTML(id);
 
@@ -312,6 +452,21 @@ class WorkspaceManager {
         this.save();
     }
 
+    reorder(fromId, toId, placeBefore) {
+        if (fromId === toId) return;
+        const fromIdx = this.workspaces.findIndex(w => w.id === fromId);
+        const toIdx = this.workspaces.findIndex(w => w.id === toId);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [moved] = this.workspaces.splice(fromIdx, 1);
+        // Recompute target after splice
+        let newIdx = this.workspaces.findIndex(w => w.id === toId);
+        if (newIdx < 0) newIdx = this.workspaces.length;
+        if (!placeBefore) newIdx += 1;
+        this.workspaces.splice(newIdx, 0, moved);
+        this.renderTabs();
+        this.save();
+    }
+
     renderTabs() {
         if (!this.tabBarEl) return;
 
@@ -320,6 +475,7 @@ class WorkspaceManager {
             const tab = document.createElement('div');
             tab.className = 'workspace-tab' + (ws.id === this.activeId ? ' active' : '');
             tab.dataset.wsId = ws.id;
+            tab.draggable = true;
             tab.innerHTML = `
                 <span class="ws-tab-name">${this.esc(ws.getDisplayName())}</span>
                 ${this.workspaces.length > 1 ? '<button class="ws-tab-close" title="關閉">×</button>' : ''}
@@ -338,6 +494,39 @@ class WorkspaceManager {
                     this.closeWorkspace(ws.id);
                 });
             }
+
+            // Drag and drop for reordering
+            tab.addEventListener('dragstart', (e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/x-ws-id', ws.id);
+                tab.classList.add('dragging');
+            });
+            tab.addEventListener('dragend', () => {
+                tab.classList.remove('dragging');
+                this.tabBarEl.querySelectorAll('.workspace-tab').forEach(t => {
+                    t.classList.remove('drag-over-left', 'drag-over-right');
+                });
+            });
+            tab.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = tab.getBoundingClientRect();
+                const before = (e.clientX - rect.left) < rect.width / 2;
+                tab.classList.toggle('drag-over-left', before);
+                tab.classList.toggle('drag-over-right', !before);
+            });
+            tab.addEventListener('dragleave', () => {
+                tab.classList.remove('drag-over-left', 'drag-over-right');
+            });
+            tab.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const fromId = e.dataTransfer.getData('text/x-ws-id');
+                if (!fromId) return;
+                const rect = tab.getBoundingClientRect();
+                const before = (e.clientX - rect.left) < rect.width / 2;
+                tab.classList.remove('drag-over-left', 'drag-over-right');
+                this.reorder(fromId, ws.id, before);
+            });
 
             this.tabBarEl.appendChild(tab);
         }

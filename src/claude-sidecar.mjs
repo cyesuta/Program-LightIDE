@@ -80,7 +80,7 @@ async function handleSend(cmd) {
             // NOTE: "default" so canUseTool is invoked; canUseTool allows everything
             // except background Bash (which it intercepts and reroutes to terminal).
             permissionMode: "default",
-            maxTurns: cmd.maxTurns || 50,
+            maxTurns: cmd.maxTurns || 100,
             // Default to Sonnet 4.5 (cheaper and stable). Override via cmd.model.
             model: cmd.model || "claude-sonnet-4-5",
             // Explicit isolation: don't load any filesystem settings
@@ -208,9 +208,13 @@ Instead you MUST simply tell the user in one short sentence that the task is run
         // DEBUG: log which model is actually being used
         process.stderr.write(`[Claude Sidecar] Query starting — model: ${opts.model}, workspaceId: ${workspaceId}, resume: ${opts.resume || "none"}, thinking: ${JSON.stringify(opts.thinking)}\n`);
 
+        // abortController must live inside `options` — the SDK's query()
+        // only destructures { prompt, options } and silently drops a top-level
+        // abortController, leaving its internal one un-wired (so .abort()
+        // would do nothing).
+        opts.abortController = abortController;
         const stream = query({
             prompt: promptArg,
-            abortController,
             options: opts,
         });
 

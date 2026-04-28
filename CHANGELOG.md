@@ -68,6 +68,25 @@
 
 ## 開發日誌
 
+### 2026-04-28
+- ✅ **修復中止鈕無效**：`claude-sidecar.mjs` 把 `abortController` 從 `query()`
+  頂層搬進 `options`。SDK 的 `query({prompt, options})` 只解構這兩個 key，
+  頂層 `abortController` 會被丟掉，內部 fallback `l1()` 自建一個——使用者
+  造的 controller 完全沒接到 SDK，按中止後 LLM 仍會持續送 text/tool_use
+- ✅ **對話儲存改用 IndexedDB**：`workspace.js` 從 `localStorage` 一坨 JSON
+  改成 per-workspace key 的 IndexedDB。chat HTML 用 `CompressionStream('gzip')`
+  壓成 `Uint8Array` 直接存 IDB（省 base64 33% 膨脹）。寫入前掃 `.diff-block`
+  超過 200 行就截斷加提示。一次性遷移從 localStorage 搬資料後 `removeItem`
+- ✅ **maxTurns 50 → 100** (`claude-sidecar.mjs`)
+- ✅ **左側檔案樹建立資料夾 + 雙擊命名**：面板加 📁＋ / 📄＋ 按鈕；右鍵
+  完整 context menu (建立/重新命名/刪除/複製路徑)；中鍵改為複製路徑
+  (原本是命名)；inline `<input>` 取代 prompt 對話框；修掉 rename 路徑
+  分隔符的 `'\\\\'` bug
+- ✅ **Claude 寫檔後刷新檔案樹**：Write/Edit/MultiEdit/Bash 成功後
+  debounce 300ms 觸發 `fileTree.loadDirectory(state.projectPath)`
+- ✅ **工作區 tab 關閉確認 + 拖曳排序**：`closeWorkspace` 改 async + 自訂
+  confirm modal；`renderTabs` 加 HTML5 drag/drop，左右半區域決定插入位置
+
 ### 2026-04-14 (背景 Bash 重導)
 - ✅ **canUseTool 攔截背景 Bash**：透過 SDK 的 `canUseTool` callback 攔截
   `Bash(run_in_background: true)`，雙向 IPC (sidecar ⇄ frontend) 把指令

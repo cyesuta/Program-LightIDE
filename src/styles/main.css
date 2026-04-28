@@ -390,6 +390,18 @@ body {
     border-color: var(--accent);
 }
 
+.workspace-tab.dragging {
+    opacity: 0.4;
+}
+
+.workspace-tab.drag-over-left {
+    box-shadow: -2px 0 0 0 var(--accent);
+}
+
+.workspace-tab.drag-over-right {
+    box-shadow: 2px 0 0 0 var(--accent);
+}
+
 .workspace-tab .ws-tab-name {
     overflow: hidden;
     text-overflow: ellipsis;

@@ -237,6 +237,30 @@
     font-size: 11px;
 }
 
+/* Inline edit input for rename / create */
+.tree-edit-input {
+    flex: 1;
+    min-width: 60px;
+    padding: 1px 4px;
+    font: inherit;
+    font-size: 18px;
+    line-height: 36px;
+    background: var(--bg-primary);
+    border: 1px solid var(--accent);
+    color: var(--text-primary);
+    outline: none;
+    border-radius: 2px;
+    margin-right: 8px;
+}
+
+.tree-item-creating {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
 /* Loading State */
 .tree-loading {
     display: flex;

@@ -167,8 +167,10 @@ fn spawn_usage_probe(lightide_dir: &std::path::Path) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // DETACHED_PROCESS (0x00000008) | CREATE_NO_WINDOW (0x08000000)
-        cmd.creation_flags(0x00000008 | 0x08000000);
+        // CREATE_NO_WINDOW (0x08000000) | CREATE_NEW_PROCESS_GROUP (0x00000200).
+        // Must NOT combine DETACHED_PROCESS — it gives the child no console at all,
+        // which makes node-pty's conpty_console_list_agent crash on AttachConsole().
+        cmd.creation_flags(0x08000000 | 0x00000200);
     }
 
     let _ = cmd.spawn();
