@@ -6,6 +6,34 @@
 
 ---
 
+## [0.2.0] - 2026-05-01
+
+### ✨ 新增功能
+
+#### 跨平台支援
+- **macOS / Linux** — 原本只跑 Windows，現在三大桌面平台皆可從原始碼編譯
+  - 新增 Shell 類型：`Zsh`、`Bash`、`Sh`（Unix 變體優先抓 `$SHELL` 而非寫死路徑）
+  - 啟動 shell 帶 `-l -i` flag 以載入 `.zshrc` / `.bash_profile`
+  - 前端 OS 偵測，下拉選單與預設 shell 依平台動態切換
+  - README 補完三平台前置設定（含 macOS Gatekeeper 繞過提示）
+
+#### Claude Chat 體驗
+- **Read 工具預設折疊** — 檔案路徑直接顯示在 header，內容預設收合，右側三角按鈕展開／收合（其他工具如 Write/Bash/Edit 維持展開）
+- **「😡 你這什麼sb錯誤！」按鈕** — 紅色警示按鈕，強制 Opus 4.6 檢討錯誤、修復後將教訓 append 到 `.claude/sb-errors.log`
+- **錯誤 log 分頁** — `.claude 設定`面板新增第 5 個 tab，瀏覽歷次 sb-errors（新到舊排序、可直接編輯、可清空）
+
+#### 工作區
+- **完成中通知** — 在其他 tab 工作時，背景 workspace 的 Claude turn 完成後 tab 變橘紅色脈動，切回去自動恢復
+- **工作區 tab 拖拽排序修復** — 修復 Tauri 2 預設 `dragDropEnabled: true` 攔截 WebView 拖拽事件導致 HTML5 DnD 失效的問題
+
+### 🔧 內部改動
+
+- `ShellType::executable()` 從 `&'static str` 改回 `String`（為支援 Unix 動態路徑）
+- 新增 `ShellType::default_for_platform()` helper，用 `#[cfg]` 在編譯期挑選預設 shell
+- `tauri.conf.json` 加 `"dragDropEnabled": false`（副作用：OS 拖檔進視窗失效，但 codebase 本來就沒用）
+
+---
+
 ## [0.1.0] - 2026-01-17
 
 ### 🎉 初始版本

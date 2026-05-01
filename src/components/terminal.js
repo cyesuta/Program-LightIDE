@@ -260,6 +260,38 @@ class TerminalTab {
     }
 }
 
+// OS detection — pure browser API, no Tauri IPC needed
+function detectOS() {
+    const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || '').toLowerCase();
+    if (p.includes('mac')) return 'macos';
+    if (p.includes('win')) return 'windows';
+    return 'linux';
+}
+
+function defaultShell() {
+    const os = detectOS();
+    if (os === 'windows') return 'powershell';
+    if (os === 'macos') return 'zsh';
+    return 'bash';
+}
+
+function shellOptionsForOS() {
+    const os = detectOS();
+    if (os === 'windows') {
+        return [
+            { value: 'powershell', label: 'PowerShell' },
+            { value: 'cmd', label: 'CMD' },
+            { value: 'gitbash', label: 'Git Bash' },
+        ];
+    }
+    // macOS / Linux
+    return [
+        { value: 'zsh', label: 'Zsh' },
+        { value: 'bash', label: 'Bash' },
+        { value: 'sh', label: 'Sh' },
+    ];
+}
+
 class TerminalComponent {
     constructor() {
         this.panel = document.getElementById('terminalPanel');
@@ -303,7 +335,7 @@ class TerminalComponent {
 
         // Create initial terminal tab after a short delay
         setTimeout(() => {
-            this.createTab('powershell');
+            this.createTab(defaultShell());
         }, 500);
     }
 
@@ -314,16 +346,17 @@ class TerminalComponent {
         // Clear existing content
         terminalContent.innerHTML = '';
 
-        // Create tab bar
+        // Create tab bar — shell options vary per OS
+        const shellOptionsHtml = shellOptionsForOS()
+            .map(o => `<option value="${o.value}">${o.label}</option>`)
+            .join('');
         this.tabBar = document.createElement('div');
         this.tabBar.className = 'terminal-tab-bar';
         this.tabBar.innerHTML = `
             <div class="terminal-tabs" id="terminalTabs"></div>
             <div class="terminal-tab-actions">
                 <select class="shell-selector-new" id="newTabShellSelector">
-                    <option value="powershell">PowerShell</option>
-                    <option value="cmd">CMD</option>
-                    <option value="gitbash">Git Bash</option>
+                    ${shellOptionsHtml}
                 </select>
                 <button class="tab-add-btn" id="addTabBtn" title="新增終端機">+</button>
             </div>
@@ -348,7 +381,7 @@ class TerminalComponent {
         if (addBtn) {
             addBtn.addEventListener('click', () => {
                 const selector = document.getElementById('newTabShellSelector');
-                const shellType = selector?.value || 'powershell';
+                const shellType = selector?.value || defaultShell();
                 this.createTab(shellType);
             });
         }
@@ -395,8 +428,9 @@ class TerminalComponent {
      * Returns { tabId, terminalId, logFile } for the sidecar response.
      */
     async createBgTaskTab(command, cwd) {
-        // Pick shell based on platform — Git Bash is best for `tee`
-        const shellType = 'gitbash';
+        // Need a POSIX shell so `tee`/pipes work for log capture.
+        // On Windows that means Git Bash; on Unix the system bash is fine.
+        const shellType = detectOS() === 'windows' ? 'gitbash' : 'bash';
 
         // Build log file path
         const timestamp = Date.now();
@@ -437,7 +471,10 @@ class TerminalComponent {
         const shellNames = {
             'powershell': 'PS',
             'cmd': 'CMD',
-            'gitbash': 'Bash'
+            'gitbash': 'Bash',
+            'zsh': 'Zsh',
+            'bash': 'Bash',
+            'sh': 'Sh',
         };
         const label = customLabel || `${shellNames[shellType] || shellType} ${this.tabIdCounter}`;
 
@@ -531,7 +568,7 @@ class TerminalComponent {
         if (state.rightPanelVisible) {
             this.fitActiveTab();
             if (this.tabs.size === 0) {
-                this.createTab('powershell');
+                this.createTab(defaultShell());
             }
         }
     }
@@ -541,7 +578,7 @@ class TerminalComponent {
         if (this.panel) this.panel.style.display = 'flex';
         this.fitActiveTab();
         if (this.tabs.size === 0) {
-            this.createTab('powershell');
+            this.createTab(defaultShell());
         }
     }
 

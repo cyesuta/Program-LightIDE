@@ -113,6 +113,9 @@ class WorkspaceManager {
         this.MAX_DIFF_LINES_STORED = 200;
         this._saveTimer = null;
         this._dbPromise = null;
+        // Workspaces whose Claude turn finished while the user was on a different tab.
+        // Visualised as an orange-red tab; cleared the moment user switches to it.
+        this.pendingCompleted = new Set();
     }
 
     async init() {
@@ -384,6 +387,10 @@ class WorkspaceManager {
         if (!target) return;
 
         this.activeId = id;
+        // Clear "needs attention" mark — user is now viewing this workspace
+        if (this.pendingCompleted.delete(id)) {
+            this._updateTabAttention(id);
+        }
         target.restoreTo(state, window.app?.claudeChat);
 
         // If target has projectPath, load file tree from disk
@@ -452,6 +459,22 @@ class WorkspaceManager {
         this.save();
     }
 
+    // Called when a Claude turn finishes for a workspace the user isn't currently viewing.
+    // Marks the tab orange-red; cleared when user switches to it.
+    markCompleted(workspaceId) {
+        if (!workspaceId || workspaceId === this.activeId) return;
+        if (!this.workspaces.some(w => w.id === workspaceId)) return;
+        this.pendingCompleted.add(workspaceId);
+        this._updateTabAttention(workspaceId);
+    }
+
+    _updateTabAttention(workspaceId) {
+        if (!this.tabBarEl) return;
+        const tab = this.tabBarEl.querySelector(`.workspace-tab[data-ws-id="${workspaceId}"]`);
+        if (!tab) return;
+        tab.classList.toggle('attention', this.pendingCompleted.has(workspaceId));
+    }
+
     reorder(fromId, toId, placeBefore) {
         if (fromId === toId) return;
         const fromIdx = this.workspaces.findIndex(w => w.id === fromId);
@@ -473,7 +496,8 @@ class WorkspaceManager {
         this.tabBarEl.innerHTML = '';
         for (const ws of this.workspaces) {
             const tab = document.createElement('div');
-            tab.className = 'workspace-tab' + (ws.id === this.activeId ? ' active' : '');
+            const attention = this.pendingCompleted.has(ws.id) ? ' attention' : '';
+            tab.className = 'workspace-tab' + (ws.id === this.activeId ? ' active' : '') + attention;
             tab.dataset.wsId = ws.id;
             tab.draggable = true;
             tab.innerHTML = `

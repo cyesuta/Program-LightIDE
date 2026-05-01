@@ -122,7 +122,9 @@ class ClaudeChatComponent {
                 </div>
                 <div class="claude-actions">
                     <button class="claude-action-btn claude-quick-btn" id="claudeCommitBtn" title="git add/commit/push (使用 Haiku 4.5)">📤 Commit + Push</button>
+                    <button class="claude-action-btn claude-quick-btn claude-sb-btn" id="claudeSbBtn" title="當你錯的離譜時按 (使用 Opus 4.6 檢討並寫入 .claude/sb-errors.log)">😡 你這什麼sb錯誤！</button>
                     <button class="claude-action-btn claude-quick-btn" id="claudeChangelogBtn" title="記錄到 CHANGELOG.md (使用 Haiku 4.5)">📋 記錄 Changelog</button>
+                    <button class="claude-action-btn claude-quick-btn claude-icon-btn" id="claudeProjectPanelBtn" title="專案 .claude 設定（hooks / skills / commands / agents）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> .claude 設定</button>
                 </div>
             </div>
         `;
@@ -225,6 +227,12 @@ class ClaudeChatComponent {
         this.container.querySelector('#claudeChangelogBtn').addEventListener('click', () => {
             this.sendQuick('更新 CHANGELOG', 'claude-haiku-4-5-20251001');
         });
+        this.container.querySelector('#claudeSbBtn').addEventListener('click', () => {
+            this.sendSbError();
+        });
+        this.container.querySelector('#claudeProjectPanelBtn').addEventListener('click', () => {
+            this.openProjectPanel();
+        });
 
         // Event delegation: double-click any file path to open it in editor
         this.messagesWrapper.addEventListener('dblclick', (e) => {
@@ -232,6 +240,19 @@ class ClaudeChatComponent {
             if (!el) return;
             const path = el.dataset.filePath;
             if (path) this.openFileInEditor(path);
+        });
+
+        // Event delegation: click triangle to expand/collapse a tool block
+        // (delegated because innerHTML restore on workspace reload drops listeners)
+        this.messagesWrapper.addEventListener('click', (e) => {
+            const toggle = e.target.closest('.tool-toggle');
+            if (!toggle) return;
+            e.stopPropagation();
+            const block = toggle.closest('.claude-tool-block');
+            if (!block) return;
+            const collapsed = block.classList.toggle('is-collapsed');
+            toggle.textContent = collapsed ? '▶' : '▼';
+            toggle.title = collapsed ? '展開' : '收合';
         });
     }
 
@@ -382,13 +403,14 @@ class ClaudeChatComponent {
 
     // ========== Send ==========
 
-    async sendQuick(message, forcedModel) {
-        // Send a pre-defined message with a forced model (used by quick action buttons)
+    async sendQuick(message, forcedModel, displayText) {
+        // Send a pre-defined message with a forced model (used by quick action buttons).
+        // displayText (optional) lets the chat bubble show a short label instead of the raw prompt.
         const view = this.getActiveView();
         const workspaceId = this.activeWorkspaceId;
         if (!view || !workspaceId || view.isProcessing) return;
 
-        this.addUserMessage(view, message);
+        this.addUserMessage(view, displayText || message);
         view.isProcessing = true;
         view.currentAssistantEl = null;
         view.pendingTools.clear();
@@ -415,6 +437,38 @@ class ClaudeChatComponent {
             view.stopTimer();
             this.updateButtonState();
         }
+    }
+
+    sendSbError() {
+        // "你這什麼sb錯誤！" — the user smashes this when the prior turn went badly off the rails.
+        // Asks Opus 4.6 to diagnose, fix, then append a lesson to .claude/sb-errors.log so
+        // the same class of mistake can be avoided next time.
+        const prompt = `[嚴重錯誤檢討 — 使用者按了「你這什麼sb錯誤！」按鈕]
+
+你剛才的回應有嚴重錯誤。請按以下步驟處理：
+
+1. **回顧**：仔細讀我之前的訊息和你的回應，找出你錯在哪裡（誤解需求？跳過驗證？亂改檔案？破壞了現有功能？亂猜檔案路徑/API？）。
+2. **歸因**：用一兩句話講出根本原因，不是表面症狀。
+3. **修復**：重新正確完成原本的任務，包含修復你剛才造成的破壞（如有）。
+4. **寫入教訓**：任務做完後，將以下格式 append 到專案根目錄的 \`.claude/sb-errors.log\`（檔案不存在則建立 .claude 目錄與檔案）：
+
+\`\`\`
+================================================================
+[YYYY-MM-DD HH:MM]  ← 用今天的實際日期時間
+情境：使用者當時要做什麼
+我做錯了什麼：一兩句具體描述
+根本原因：為什麼會這樣錯（誤解了什麼前提、跳過了什麼確認、預設了什麼不該預設的東西）
+教訓：未來在 [類似情境] 下，應該 [具體做法]，避免 [具體陷阱]
+================================================================
+\`\`\`
+
+寫入規則：
+- **append 模式**：寫入前先 Read \`.claude/sb-errors.log\`（若存在），把舊內容完整保留在最前面，新條目接在後面。**禁止覆寫舊 log**。
+- 若 .claude 目錄不存在請先建立。
+- 「教訓」要具體可行，不要寫「下次更小心」這種廢話。寫完整段後再 Write 整個檔案。
+
+現在開始。`;
+        this.sendQuick(prompt, 'claude-opus-4-6', '😡 你這什麼sb錯誤！（請檢討、修復並寫入 sb-errors.log）');
     }
 
     async send() {
@@ -616,6 +670,10 @@ class ClaudeChatComponent {
                 if (this.activeWorkspaceId === workspaceId) {
                     this.refreshStatusBar();
                     this.updateButtonState();
+                } else if (!data.aborted && typeof workspaceManager !== 'undefined') {
+                    // Turn finished for a workspace the user isn't viewing — flag the tab.
+                    // Aborted turns are skipped: the user clicked stop, they already know.
+                    workspaceManager.markCompleted?.(workspaceId);
                 }
 
                 // If this was a compact request, finish the compact flow
@@ -717,6 +775,7 @@ class ClaudeChatComponent {
         const toolName = block.name || 'Tool';
         const isFileEdit = ['Edit', 'Write', 'MultiEdit'].includes(toolName);
         const isBgBash = toolName === 'Bash' && block.input?.run_in_background === true;
+        const isRead = toolName === 'Read';
 
         // Track file path on the element for auto-reload after tool_result
         if (isFileEdit && block.input?.file_path) {
@@ -778,14 +837,33 @@ class ClaudeChatComponent {
 
         const desc = block.input?.description ? `<span class="tool-desc">${this.esc(block.input.description)}</span>` : '';
 
+        // For Read: show the file path inline in the header and start collapsed.
+        // The input/output bodies stay in the DOM but hidden until the user clicks the triangle.
+        let headerExtra = desc;
+        let toggleBtn = '';
+        if (isRead && block.input?.file_path) {
+            const fp = block.input.file_path;
+            const meta = [];
+            if (block.input.offset) meta.push(`offset ${block.input.offset}`);
+            if (block.input.limit) meta.push(`limit ${block.input.limit}`);
+            const metaHtml = meta.length ? ` <span class="tool-read-meta">(${meta.join(', ')})</span>` : '';
+            headerExtra = `<span class="tool-read-path file-clickable" data-file-path="${this.esc(fp)}" title="${this.esc(fp)} — 雙擊開啟">${this.esc(fp)}</span>${metaHtml}`;
+            toolEl.classList.add('is-collapsed');
+            toggleBtn = `<button class="tool-toggle" type="button" title="展開">▶</button>`;
+            // Don't render the redundant input pre — file path is already in the header
+            inputBody = '';
+        }
+
+        const inputBlock = inputBody ? `<div class="tool-input">${inputBody}</div>` : '';
         toolEl.innerHTML = `
             <div class="tool-header">
                 <span class="tool-icon">${this.getToolIcon(toolName)}</span>
                 <span class="tool-name">${this.esc(toolName)}</span>
-                ${desc}
+                ${headerExtra}
+                ${toggleBtn}
                 <span class="tool-status running"><span class="tool-spinner"></span>執行中</span>
             </div>
-            <div class="tool-input">${inputBody}</div>
+            ${inputBlock}
             <div class="tool-output" style="display:none;"></div>
         `;
 
@@ -1219,6 +1297,565 @@ class ClaudeChatComponent {
             // Focus the OK button
             setTimeout(() => modal.querySelector('.claude-confirm-ok').focus(), 50);
         });
+    }
+
+    // Generic single-line input modal (returns string or null on cancel)
+    showInput({ icon = '✏️', title = '輸入', label = '', placeholder = '', defaultValue = '', confirmText = '確定', cancelText = '取消', validate = null }) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.className = 'claude-confirm-modal';
+            modal.innerHTML = `
+                <div class="claude-confirm-content">
+                    <div class="claude-confirm-icon">${icon}</div>
+                    <div class="claude-confirm-title">${this.esc(title)}</div>
+                    ${label ? `<div class="claude-confirm-body" style="margin-bottom:8px;">${this.esc(label)}</div>` : ''}
+                    <input type="text" class="claude-input-field" placeholder="${this.esc(placeholder)}" value="${this.esc(defaultValue)}" />
+                    <div class="claude-confirm-error" style="display:none; color:var(--error,#e57373); font-size:12px; margin-top:6px;"></div>
+                    <div class="claude-confirm-actions" style="margin-top:16px;">
+                        <button class="claude-confirm-cancel">${this.esc(cancelText)}</button>
+                        <button class="claude-confirm-ok">${this.esc(confirmText)}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const inputEl = modal.querySelector('.claude-input-field');
+            const errorEl = modal.querySelector('.claude-confirm-error');
+
+            const cleanup = () => {
+                modal.remove();
+                document.removeEventListener('keydown', onKey);
+            };
+            const submit = () => {
+                const val = inputEl.value.trim();
+                if (validate) {
+                    const err = validate(val);
+                    if (err) {
+                        errorEl.textContent = err;
+                        errorEl.style.display = 'block';
+                        return;
+                    }
+                }
+                cleanup();
+                resolve(val);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') { cleanup(); resolve(null); }
+                if (e.key === 'Enter') { e.preventDefault(); submit(); }
+            };
+            modal.querySelector('.claude-confirm-cancel').addEventListener('click', () => { cleanup(); resolve(null); });
+            modal.querySelector('.claude-confirm-ok').addEventListener('click', submit);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) { cleanup(); resolve(null); }
+            });
+            document.addEventListener('keydown', onKey);
+            setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
+        });
+    }
+
+    // ========== Project .claude settings panel ==========
+
+    // Inline SVG icons (Lucide-style, stroke-based, follow currentColor)
+    _icon(name, size = 14) {
+        const paths = {
+            settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+            fileCog: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><circle cx="12" cy="15" r="2"/>',
+            layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+            terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+            bot: '<rect x="3" y="11" width="18" height="10" rx="2" ry="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8.01" y2="16"/><line x1="16" y1="16" x2="16.01" y2="16"/>',
+            folderOpen: '<path d="M6 14l1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/>',
+            plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+            close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+            pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+            alertTriangle: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+            trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>',
+            refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+        };
+        return `<svg class="claude-svg-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
+    }
+
+    _projectPanelTemplates() {
+        return {
+            settingsJson: `{
+  "//": "Claude Code project settings — loaded when LightIDE chat is in '完整' (full) prompt mode.",
+  "//hooks": "Hooks are shell commands triggered on tool/lifecycle events. Remove this template once you wire real hooks.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "echo 'About to run a Bash tool call'" }
+        ]
+      }
+    ],
+    "PostToolUse": [],
+    "Stop": [],
+    "UserPromptSubmit": []
+  }
+}
+`,
+            skillMd: (name) => `---
+name: ${name}
+description: One-line description that helps Claude decide when to invoke this skill. Be specific about triggers.
+---
+
+# ${name}
+
+Describe what this skill does.
+
+## When to use
+
+- Trigger condition 1
+- Trigger condition 2
+
+## Steps
+
+1. First step
+2. Second step
+`,
+            commandMd: (name) => `---
+description: One-line description shown in the slash menu.
+---
+
+You are running the /${name} command. Write your prompt to Claude here.
+
+User arguments are available as $ARGUMENTS.
+`,
+            agentMd: (name) => `---
+name: ${name}
+description: When to use this subagent. Be specific so Claude picks the right one.
+tools: Read, Grep, Glob
+---
+
+You are a specialized assistant for ...
+
+Your task is to ...
+`,
+        };
+    }
+
+    // Parse simple YAML-ish frontmatter from a markdown string. Returns {} on failure.
+    _parseFrontmatter(text) {
+        if (!text) return {};
+        const m = text.match(/^---\s*\n([\s\S]*?)\n---/);
+        if (!m) return {};
+        const out = {};
+        for (const line of m[1].split('\n')) {
+            const kv = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+            if (kv) out[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, '');
+        }
+        return out;
+    }
+
+    async _readFileSafe(path) {
+        try {
+            const r = await window.__TAURI__.core.invoke('read_file', { path });
+            if (r && r.success) return r.data;
+        } catch {}
+        return null;
+    }
+
+    async _listDirSafe(path) {
+        try {
+            const r = await window.__TAURI__.core.invoke('get_file_tree', { path });
+            if (r && r.success) return r.data || [];
+        } catch {}
+        return null; // null = dir not found / unreadable
+    }
+
+    async _ensureDir(path) {
+        try {
+            await window.__TAURI__.core.invoke('create_directory', { path });
+            return true;
+        } catch { return false; }
+    }
+
+    async _writeFile(path, content) {
+        try {
+            const r = await window.__TAURI__.core.invoke('save_file', { path, content });
+            return r && r.success;
+        } catch { return false; }
+    }
+
+    _joinPath(base, ...parts) {
+        const sep = base.includes('\\') ? '\\' : '/';
+        return [base, ...parts].join(sep).replace(/[\\/]+/g, sep);
+    }
+
+    async openProjectPanel() {
+        const cwd = (typeof state !== 'undefined' && state?.projectPath) || null;
+        if (!cwd) {
+            await this.showConfirm({
+                icon: '📁', title: '尚未開啟專案',
+                body: '請先開啟一個專案資料夾，再使用此面板。',
+                confirmText: '了解', cancelText: '',
+            });
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'claude-confirm-modal claude-project-panel';
+        modal.innerHTML = `
+            <div class="claude-confirm-content claude-project-content">
+                <div class="claude-project-header">
+                    <div class="claude-project-title">${this._icon('settings', 16)} 專案 .claude 設定</div>
+                    <button class="claude-project-close" title="關閉 (Esc)">${this._icon('close', 16)}</button>
+                </div>
+                <div class="claude-project-path">${this.esc(cwd)}</div>
+                <div class="claude-project-tabs">
+                    <button class="claude-project-tab active" data-tab="hooks">${this._icon('fileCog')} Hooks</button>
+                    <button class="claude-project-tab" data-tab="skills">${this._icon('layers')} Skills</button>
+                    <button class="claude-project-tab" data-tab="commands">${this._icon('terminal')} Commands</button>
+                    <button class="claude-project-tab" data-tab="agents">${this._icon('bot')} Agents</button>
+                    <button class="claude-project-tab" data-tab="errors">${this._icon('alertTriangle')} 錯誤log</button>
+                </div>
+                <div class="claude-project-body" id="claudeProjectBody"></div>
+                <div class="claude-project-footer">
+                    僅在「完整」prompt 模式下載入；存檔後需新對話才生效。
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const close = () => {
+            modal.remove();
+            document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') close(); };
+        document.addEventListener('keydown', onKey);
+        modal.querySelector('.claude-project-close').addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+        const bodyEl = modal.querySelector('#claudeProjectBody');
+        const tabs = modal.querySelectorAll('.claude-project-tab');
+        const renderers = {
+            hooks: () => this._renderHooksTab(bodyEl, cwd),
+            skills: () => this._renderSkillsTab(bodyEl, cwd),
+            commands: () => this._renderCommandsTab(bodyEl, cwd),
+            agents: () => this._renderAgentsTab(bodyEl, cwd),
+            errors: () => this._renderErrorsTab(bodyEl, cwd),
+        };
+        tabs.forEach(t => {
+            t.addEventListener('click', () => {
+                tabs.forEach(x => x.classList.remove('active'));
+                t.classList.add('active');
+                renderers[t.dataset.tab]();
+            });
+        });
+
+        // initial render
+        renderers.hooks();
+    }
+
+    async _renderHooksTab(bodyEl, cwd) {
+        bodyEl.innerHTML = '<div class="claude-project-loading">載入中…</div>';
+        const claudeDir = this._joinPath(cwd, '.claude');
+        const settingsPath = this._joinPath(claudeDir, 'settings.json');
+        const localPath = this._joinPath(claudeDir, 'settings.local.json');
+        const settings = await this._readFileSafe(settingsPath);
+        const local = await this._readFileSafe(localPath);
+
+        const fileRow = (label, path, content, isLocal) => {
+            const exists = content !== null;
+            return `
+                <div class="claude-project-row" data-path="${this.esc(path)}">
+                    <div class="claude-project-row-main">
+                        <div class="claude-project-row-name">${this.esc(label)}${isLocal ? ' <span class="claude-project-tag">gitignored</span>' : ''}</div>
+                        <div class="claude-project-row-meta">${this.esc(path)}</div>
+                    </div>
+                    <div class="claude-project-row-actions">
+                        ${exists
+                            ? `<button class="claude-project-btn open">${this._icon('folderOpen')} 開啟</button>`
+                            : `<button class="claude-project-btn create">${this._icon('plus')} 建立 (套模板)</button>`}
+                    </div>
+                </div>
+            `;
+        };
+
+        bodyEl.innerHTML = `
+            <div class="claude-project-section-title">Hook 設定檔</div>
+            ${fileRow('settings.json', settingsPath, settings, false)}
+            ${fileRow('settings.local.json', localPath, local, true)}
+            <div class="claude-project-hint">
+                Hook 是 SDK 在工具呼叫/生命週期事件上跑的 shell 指令。<code>settings.json</code> 提交版本控制，<code>settings.local.json</code> 為個人覆寫。完整 schema 請見 Claude Code 文件。
+            </div>
+        `;
+
+        bodyEl.querySelectorAll('.claude-project-row').forEach(row => {
+            const path = row.dataset.path;
+            const openBtn = row.querySelector('.claude-project-btn.open');
+            const createBtn = row.querySelector('.claude-project-btn.create');
+            if (openBtn) openBtn.addEventListener('click', () => this._openInEditor(path));
+            if (createBtn) createBtn.addEventListener('click', async () => {
+                await this._ensureDir(this._joinPath(cwd, '.claude'));
+                const tpl = this._projectPanelTemplates().settingsJson;
+                const ok = await this._writeFile(path, tpl);
+                if (ok) {
+                    await this._openInEditor(path);
+                    this._renderHooksTab(bodyEl, cwd); // refresh
+                }
+            });
+        });
+    }
+
+    async _renderSkillsTab(bodyEl, cwd) {
+        bodyEl.innerHTML = '<div class="claude-project-loading">掃描 .claude/skills/ …</div>';
+        const skillsDir = this._joinPath(cwd, '.claude', 'skills');
+        const entries = await this._listDirSafe(skillsDir);
+
+        const items = [];
+        if (Array.isArray(entries)) {
+            for (const e of entries) {
+                if (!e.is_dir && !e.isDir) continue;
+                const skillFile = this._joinPath(e.path, 'SKILL.md');
+                const content = await this._readFileSafe(skillFile);
+                const meta = this._parseFrontmatter(content);
+                items.push({
+                    name: meta.name || e.name,
+                    description: meta.description || '(無 SKILL.md 或缺少 description)',
+                    path: skillFile,
+                    exists: content !== null,
+                });
+            }
+        }
+
+        bodyEl.innerHTML = `
+            <div class="claude-project-section-title">
+                Skills (${items.length})
+                <button class="claude-project-add-btn" id="claudeAddSkill">${this._icon('plus', 12)} 新增 skill</button>
+            </div>
+            ${items.length === 0
+                ? `<div class="claude-project-empty">尚無 skill。點上方「+ 新增 skill」建立第一個。</div>`
+                : items.map(s => `
+                    <div class="claude-project-row" data-path="${this.esc(s.path)}">
+                        <div class="claude-project-row-main">
+                            <div class="claude-project-row-name">${this.esc(s.name)}${s.exists ? '' : ' <span class="claude-project-tag warn">缺 SKILL.md</span>'}</div>
+                            <div class="claude-project-row-desc">${this.esc(s.description)}</div>
+                        </div>
+                        <div class="claude-project-row-actions">
+                            <button class="claude-project-btn open">${this._icon('folderOpen')} 開啟</button>
+                        </div>
+                    </div>
+                `).join('')
+            }
+            <div class="claude-project-hint">
+                每個 skill 是 <code>.claude/skills/&lt;name&gt;/SKILL.md</code>，frontmatter 的 <code>description</code> 決定 Claude 何時呼叫它。
+            </div>
+        `;
+
+        bodyEl.querySelectorAll('.claude-project-row .open').forEach(btn => {
+            btn.addEventListener('click', () => this._openInEditor(btn.closest('.claude-project-row').dataset.path));
+        });
+        bodyEl.querySelector('#claudeAddSkill').addEventListener('click', async () => {
+            const name = await this._askName('skill');
+            if (!name) return;
+            const dir = this._joinPath(skillsDir, name);
+            await this._ensureDir(dir);
+            const file = this._joinPath(dir, 'SKILL.md');
+            const ok = await this._writeFile(file, this._projectPanelTemplates().skillMd(name));
+            if (ok) {
+                await this._openInEditor(file);
+                this._renderSkillsTab(bodyEl, cwd);
+            }
+        });
+    }
+
+    async _renderCommandsTab(bodyEl, cwd) {
+        bodyEl.innerHTML = '<div class="claude-project-loading">掃描 .claude/commands/ …</div>';
+        const dir = this._joinPath(cwd, '.claude', 'commands');
+        const entries = await this._listDirSafe(dir);
+
+        const items = [];
+        if (Array.isArray(entries)) {
+            for (const e of entries) {
+                if (e.is_dir || e.isDir) continue;
+                if (!e.name.endsWith('.md')) continue;
+                const content = await this._readFileSafe(e.path);
+                const meta = this._parseFrontmatter(content);
+                items.push({
+                    name: e.name.replace(/\.md$/, ''),
+                    description: meta.description || '(無 description)',
+                    path: e.path,
+                });
+            }
+        }
+
+        bodyEl.innerHTML = `
+            <div class="claude-project-section-title">
+                Slash Commands (${items.length})
+                <button class="claude-project-add-btn" id="claudeAddCommand">${this._icon('plus', 12)} 新增 command</button>
+            </div>
+            ${items.length === 0
+                ? `<div class="claude-project-empty">尚無 slash command。檔名 = 指令名稱（例如 <code>review.md</code> → <code>/review</code>）。</div>`
+                : items.map(c => `
+                    <div class="claude-project-row" data-path="${this.esc(c.path)}">
+                        <div class="claude-project-row-main">
+                            <div class="claude-project-row-name">/${this.esc(c.name)}</div>
+                            <div class="claude-project-row-desc">${this.esc(c.description)}</div>
+                        </div>
+                        <div class="claude-project-row-actions">
+                            <button class="claude-project-btn open">${this._icon('folderOpen')} 開啟</button>
+                        </div>
+                    </div>
+                `).join('')
+            }
+            <div class="claude-project-hint">
+                <code>.claude/commands/&lt;name&gt;.md</code> 對應 <code>/&lt;name&gt;</code>。檔案內容會被當成送給 Claude 的 prompt，可用 <code>$ARGUMENTS</code> 帶入使用者輸入。
+            </div>
+        `;
+
+        bodyEl.querySelectorAll('.claude-project-row .open').forEach(btn => {
+            btn.addEventListener('click', () => this._openInEditor(btn.closest('.claude-project-row').dataset.path));
+        });
+        bodyEl.querySelector('#claudeAddCommand').addEventListener('click', async () => {
+            const name = await this._askName('command');
+            if (!name) return;
+            await this._ensureDir(dir);
+            const file = this._joinPath(dir, `${name}.md`);
+            const ok = await this._writeFile(file, this._projectPanelTemplates().commandMd(name));
+            if (ok) {
+                await this._openInEditor(file);
+                this._renderCommandsTab(bodyEl, cwd);
+            }
+        });
+    }
+
+    async _renderAgentsTab(bodyEl, cwd) {
+        bodyEl.innerHTML = '<div class="claude-project-loading">掃描 .claude/agents/ …</div>';
+        const dir = this._joinPath(cwd, '.claude', 'agents');
+        const entries = await this._listDirSafe(dir);
+
+        const items = [];
+        if (Array.isArray(entries)) {
+            for (const e of entries) {
+                if (e.is_dir || e.isDir) continue;
+                if (!e.name.endsWith('.md')) continue;
+                const content = await this._readFileSafe(e.path);
+                const meta = this._parseFrontmatter(content);
+                items.push({
+                    name: meta.name || e.name.replace(/\.md$/, ''),
+                    description: meta.description || '(無 description)',
+                    tools: meta.tools || '',
+                    path: e.path,
+                });
+            }
+        }
+
+        bodyEl.innerHTML = `
+            <div class="claude-project-section-title">
+                Subagents (${items.length})
+                <button class="claude-project-add-btn" id="claudeAddAgent">${this._icon('plus', 12)} 新增 agent</button>
+            </div>
+            ${items.length === 0
+                ? `<div class="claude-project-empty">尚無 subagent。建議 frontmatter 含 <code>name</code> / <code>description</code> / <code>tools</code>。</div>`
+                : items.map(a => `
+                    <div class="claude-project-row" data-path="${this.esc(a.path)}">
+                        <div class="claude-project-row-main">
+                            <div class="claude-project-row-name">${this.esc(a.name)}${a.tools ? ` <span class="claude-project-tag">${this.esc(a.tools)}</span>` : ''}</div>
+                            <div class="claude-project-row-desc">${this.esc(a.description)}</div>
+                        </div>
+                        <div class="claude-project-row-actions">
+                            <button class="claude-project-btn open">${this._icon('folderOpen')} 開啟</button>
+                        </div>
+                    </div>
+                `).join('')
+            }
+            <div class="claude-project-hint">
+                <code>.claude/agents/&lt;name&gt;.md</code>。Claude 會根據 <code>description</code> 自動挑選合適的 subagent 來分派子任務。
+            </div>
+        `;
+
+        bodyEl.querySelectorAll('.claude-project-row .open').forEach(btn => {
+            btn.addEventListener('click', () => this._openInEditor(btn.closest('.claude-project-row').dataset.path));
+        });
+        bodyEl.querySelector('#claudeAddAgent').addEventListener('click', async () => {
+            const name = await this._askName('agent');
+            if (!name) return;
+            await this._ensureDir(dir);
+            const file = this._joinPath(dir, `${name}.md`);
+            const ok = await this._writeFile(file, this._projectPanelTemplates().agentMd(name));
+            if (ok) {
+                await this._openInEditor(file);
+                this._renderAgentsTab(bodyEl, cwd);
+            }
+        });
+    }
+
+    async _renderErrorsTab(bodyEl, cwd) {
+        bodyEl.innerHTML = '<div class="claude-project-loading">讀取 .claude/sb-errors.log …</div>';
+        const logPath = this._joinPath(cwd, '.claude', 'sb-errors.log');
+        const content = await this._readFileSafe(logPath);
+
+        // Split entries on the ===== separator the SB-error prompt uses, keep order newest→oldest
+        const entries = [];
+        if (content) {
+            const blocks = content.split(/={10,}\s*\n/).map(s => s.trim()).filter(Boolean);
+            // Each entry is bracketed by ===, so we expect blocks to alternate. Just take non-empty trimmed blocks.
+            entries.push(...blocks);
+            entries.reverse(); // newest first
+        }
+
+        bodyEl.innerHTML = `
+            <div class="claude-project-section-title">
+                <span>錯誤紀錄 (${entries.length})</span>
+                <div style="display:flex; gap:6px; margin-left:auto;">
+                    <button class="claude-project-add-btn" id="claudeRefreshErrors">${this._icon('refresh', 12)} 重新整理</button>
+                    ${content ? `<button class="claude-project-add-btn" id="claudeOpenErrors">${this._icon('folderOpen', 12)} 在編輯器開啟</button>` : ''}
+                    ${content ? `<button class="claude-project-add-btn claude-project-danger" id="claudeClearErrors">${this._icon('trash', 12)} 清空</button>` : ''}
+                </div>
+            </div>
+            ${!content
+                ? `<div class="claude-project-empty">尚無錯誤紀錄。當你按下聊天區的「😡 你這什麼sb錯誤！」按鈕，Claude 修復完會把教訓 append 到 <code>.claude/sb-errors.log</code>。</div>`
+                : entries.length === 0
+                    ? `<div class="claude-project-empty">log 檔存在但內容為空或無法解析。<button class="claude-project-add-btn" id="claudeOpenErrors2">${this._icon('folderOpen', 12)} 直接開啟</button></div>`
+                    : `<div class="claude-error-log-list">${entries.map(e => `
+                        <div class="claude-error-entry"><pre>${this.esc(e)}</pre></div>
+                    `).join('')}</div>`
+            }
+            <div class="claude-project-hint">
+                條目從新到舊。檔案路徑：<code>${this.esc(logPath)}</code>
+            </div>
+        `;
+
+        const refreshBtn = bodyEl.querySelector('#claudeRefreshErrors');
+        const openBtn = bodyEl.querySelector('#claudeOpenErrors') || bodyEl.querySelector('#claudeOpenErrors2');
+        const clearBtn = bodyEl.querySelector('#claudeClearErrors');
+
+        if (refreshBtn) refreshBtn.addEventListener('click', () => this._renderErrorsTab(bodyEl, cwd));
+        if (openBtn) openBtn.addEventListener('click', () => this._openInEditor(logPath));
+        if (clearBtn) clearBtn.addEventListener('click', async () => {
+            const ok = await this.showConfirm({
+                icon: '🗑',
+                title: '清空錯誤紀錄',
+                body: '確定要清空 .claude/sb-errors.log 嗎？所有教訓條目會被刪除（無法復原）。',
+                confirmText: '清空',
+                cancelText: '取消',
+            });
+            if (!ok) return;
+            await this._writeFile(logPath, '');
+            this._renderErrorsTab(bodyEl, cwd);
+        });
+    }
+
+    async _askName(kind) {
+        return await this.showInput({
+            icon: this._icon('pencil', 32),
+            title: `新增 ${kind}`,
+            label: '名稱（英數、破折號、底線）：',
+            placeholder: `my-${kind}`,
+            confirmText: '建立',
+            validate: (v) => {
+                if (!v) return '請輸入名稱';
+                if (!/^[A-Za-z0-9_-]+$/.test(v)) return '只能使用英數、破折號、底線';
+                return null;
+            },
+        });
+    }
+
+    async _openInEditor(path) {
+        if (typeof fileTree !== 'undefined') {
+            try { await fileTree.openFile(path); } catch (e) { console.error(e); }
+        }
     }
 
     async compactContext() {

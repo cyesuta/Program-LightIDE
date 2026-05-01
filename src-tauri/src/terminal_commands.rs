@@ -28,8 +28,17 @@ pub async fn create_terminal(
     let shell_type = match shell.to_lowercase().as_str() {
         "powershell" | "ps" => ShellType::PowerShell,
         "cmd" => ShellType::Cmd,
-        "gitbash" | "git-bash" | "bash" => ShellType::GitBash,
-        _ => ShellType::PowerShell, // Default to PowerShell
+        "gitbash" | "git-bash" => ShellType::GitBash,
+        // "bash" historically meant Git Bash on Windows; on Unix it's actual bash.
+        "bash" => {
+            #[cfg(windows)]
+            { ShellType::GitBash }
+            #[cfg(not(windows))]
+            { ShellType::Bash }
+        }
+        "zsh" => ShellType::Zsh,
+        "sh" => ShellType::Sh,
+        _ => ShellType::default_for_platform(),
     };
 
     match TERMINAL_MANAGER.create_terminal(shell_type, cwd, log_file, app) {

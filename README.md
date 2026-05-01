@@ -23,7 +23,7 @@
 
 - **極速啟動** — 使用原生 Rust 後端，啟動迅速
 - **輕量資源** — 使用 Tauri 框架，資源佔用更低
-- **真正的終端機** — 支援 PowerShell、CMD、Git Bash，使用 xterm.js 專業渲染
+- **真正的終端機** — Windows: PowerShell / CMD / Git Bash；macOS / Linux: Zsh / Bash / Sh，使用 xterm.js 專業渲染
 - **檔案瀏覽** — 內建檔案樹，輕鬆瀏覽專案結構
 - **現代 UI** — 深色主題，舒適的開發體驗
 
@@ -33,7 +33,7 @@
 |------|------|
 | 檔案總管 | 瀏覽專案目錄結構 |
 | 程式碼編輯 | 基礎的程式碼編輯功能 |
-| 終端機 | PowerShell / CMD / Git Bash |
+| 終端機 | Windows: PowerShell / CMD / Git Bash · macOS / Linux: Zsh / Bash / Sh |
 | 即時預覽 | HTML、Markdown 檔案預覽 |
 
 ## 效能目標
@@ -59,10 +59,10 @@
 git clone https://github.com/cyesuta/Program-LightIDE.git
 cd Program-LightIDE
 
-# 安裝 Node.js 依賴
+# 安裝 Node.js 依賴 (含 node-pty 自動編譯)
 npm install
 
-# 下載前端依賴 (xterm.js)
+# 下載前端依賴 (xterm.js / esbuild.wasm)
 npm run setup
 
 # 編譯並運行
@@ -80,8 +80,29 @@ cargo build --release
 ### 前置需求
 
 - [Rust](https://www.rust-lang.org/) 1.70+
-- [Node.js](https://nodejs.org/) 18+ (僅開發時需要，用於下載依賴)
-- Windows 10/11
+- [Node.js](https://nodejs.org/) 18 / 20 / 22 (LTS)
+- 支援平台：Windows 10/11、macOS 11+、Linux
+
+### 平台特定設定
+
+#### Windows
+- 安裝 [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/)（C++ 工作負載）以支援 native module 編譯
+- 內建 WebView2，無需額外安裝
+
+#### macOS
+```bash
+xcode-select --install                                          # native module 編譯工具鏈 (node-pty 等)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  # Rust toolchain
+brew install node                                               # Node.js (或用 nvm)
+```
+首次執行未簽章的 `.app` 時，macOS Gatekeeper 可能擋下——右鍵→「開啟」即可，或於終端機執行 `xattr -cr ./LightIDE.app`。
+
+#### Linux
+```bash
+# Debian/Ubuntu
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
 
 ### 專案結構
 
@@ -149,9 +170,10 @@ LightIDE/
 │  └─────────────────────────────────────────────────────┘   │
 │                         │                                   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │           Platform Layer (Windows)                   │   │
-│  │  • ConPTY (Windows Pseudo Terminal)                 │   │
-│  │  • WebView2                                          │   │
+│  │     Platform Layer (Windows / macOS / Linux)        │   │
+│  │  • Windows: ConPTY + WebView2                       │   │
+│  │  • macOS:   openpty + WKWebView                     │   │
+│  │  • Linux:   openpty + WebKitGTK                     │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -165,14 +187,14 @@ LightIDE/
 | **終端機** | [xterm.js](https://xtermjs.org/) (MIT) |
 | **後端** | Rust + [Tauri](https://tauri.app/) (MIT) |
 | **PTY** | [portable-pty](https://github.com/wez/wezterm/tree/main/pty) (MIT) |
-| **視窗** | WebView2 |
+| **視窗** | WebView2 (Win) · WKWebView (macOS) · WebKitGTK (Linux) |
 
 ### Rust Crates
 
 | 功能 | Crate | 說明 |
 |------|-------|------|
 | **應用框架** | `tauri` | 輕量桌面應用框架 |
-| **終端機** | `portable-pty` | 跨平台 PTY (使用 ConPTY) |
+| **終端機** | `portable-pty` | 跨平台 PTY (Win=ConPTY, macOS/Linux=openpty) |
 | **檔案監視** | `notify` | 檔案變更監聽 |
 | **序列化** | `serde` | JSON 序列化 |
 | **非同步** | `tokio` | 非同步 IO |
@@ -187,7 +209,7 @@ LightIDE/
 - [x] 三欄式基本佈局
 - [x] 檔案樹基本顯示
 - [x] 純文字檔案讀取與顯示
-- [x] 終端機整合 (PowerShell/CMD/Git Bash)
+- [x] 終端機整合 (Windows: PS/CMD/GitBash · macOS/Linux: Zsh/Bash/Sh)
 - [x] xterm.js 專業渲染
 
 ### Phase 2: 核心編輯功能 (開發中)
@@ -230,7 +252,9 @@ line_numbers = true
 name = "dark"
 
 [terminal]
-shell = "powershell"  # "powershell" | "cmd" | "gitbash"
+# Windows: "powershell" | "cmd" | "gitbash"
+# macOS / Linux: "zsh" | "bash" | "sh"
+shell = "powershell"
 font_size = 13
 
 [window]

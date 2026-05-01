@@ -20,17 +20,35 @@ use std::os::windows::process::CommandExt;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ShellType {
+    // Windows
     PowerShell,
     Cmd,
     GitBash,
+    // Unix (macOS / Linux)
+    Zsh,
+    Bash,
+    Sh,
 }
 
 impl ShellType {
-    pub fn executable(&self) -> &'static str {
+    /// Resolve to an executable path. Returns String because Unix variants may
+    /// pick up the user's $SHELL at runtime instead of a hardcoded path.
+    pub fn executable(&self) -> String {
         match self {
-            ShellType::PowerShell => "powershell.exe",
-            ShellType::Cmd => "cmd.exe",
-            ShellType::GitBash => "C:\\Program Files\\Git\\bin\\bash.exe",
+            ShellType::PowerShell => "powershell.exe".to_string(),
+            ShellType::Cmd => "cmd.exe".to_string(),
+            ShellType::GitBash => "C:\\Program Files\\Git\\bin\\bash.exe".to_string(),
+            // Prefer $SHELL when it ends with the right binary name, else fall back to a
+            // standard absolute path. This respects Homebrew-installed shells, etc.
+            ShellType::Zsh => std::env::var("SHELL")
+                .ok()
+                .filter(|s| s.ends_with("/zsh"))
+                .unwrap_or_else(|| "/bin/zsh".to_string()),
+            ShellType::Bash => std::env::var("SHELL")
+                .ok()
+                .filter(|s| s.ends_with("/bash"))
+                .unwrap_or_else(|| "/bin/bash".to_string()),
+            ShellType::Sh => "/bin/sh".to_string(),
         }
     }
 
@@ -39,7 +57,20 @@ impl ShellType {
             ShellType::PowerShell => vec!["-NoLogo", "-NoProfile"],
             ShellType::Cmd => vec![],
             ShellType::GitBash => vec!["--login", "-i"],
+            // Login + interactive so PATH/aliases from .zshrc / .bash_profile are loaded
+            ShellType::Zsh | ShellType::Bash => vec!["-l", "-i"],
+            ShellType::Sh => vec![],
         }
+    }
+
+    /// Pick a sensible default shell for the current OS.
+    pub fn default_for_platform() -> Self {
+        #[cfg(windows)]
+        { ShellType::PowerShell }
+        #[cfg(target_os = "macos")]
+        { ShellType::Zsh }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        { ShellType::Bash }
     }
 }
 
@@ -87,7 +118,7 @@ impl TerminalHandle {
         let alive = Arc::new(Mutex::new(true));
         let alive_clone = Arc::clone(&alive);
 
-        let shell_exe = shell_type.executable().to_string();
+        let shell_exe = shell_type.executable();
         let shell_args: Vec<String> = shell_type.args().iter().map(|s| s.to_string()).collect();
         let cwd_clone = cwd.clone();
         let terminal_id = id.clone();

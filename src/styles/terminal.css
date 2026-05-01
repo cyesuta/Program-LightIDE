@@ -1271,6 +1271,309 @@
     outline-offset: 2px;
 }
 
+/* Generic single-line input field (used by showInput modal) */
+.claude-input-field {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+}
+.claude-input-field:focus {
+    border-color: var(--accent);
+}
+
+/* Inline SVG icon — used in panel buttons/tabs/titles */
+.claude-svg-icon {
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 5px;
+    flex-shrink: 0;
+}
+.claude-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.claude-icon-btn .claude-svg-icon { margin-right: 0; vertical-align: 0; }
+
+/* ===== Project .claude settings panel ===== */
+.claude-project-panel .claude-project-content {
+    min-width: 640px;
+    max-width: 760px;
+    width: 70vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+.claude-project-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 8px;
+}
+.claude-project-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.claude-project-title .claude-svg-icon { margin-right: 0; vertical-align: 0; }
+.claude-project-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+.claude-project-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+.claude-project-path {
+    padding: 0 20px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-break: break-all;
+    user-select: text;
+}
+.claude-project-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+}
+.claude-project-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.claude-project-tab:hover {
+    color: var(--text-primary);
+}
+.claude-project-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+.claude-project-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 20px;
+    min-height: 220px;
+}
+.claude-project-footer {
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    border-radius: 0 0 12px 12px;
+}
+.claude-project-section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 4px 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.claude-project-add-btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.claude-project-add-btn:hover {
+    background: var(--accent-hover);
+}
+.claude-project-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    background: var(--bg-primary);
+    gap: 12px;
+}
+.claude-project-row:hover {
+    background: var(--bg-hover);
+}
+.claude-project-row-main {
+    flex: 1;
+    min-width: 0;
+}
+.claude-project-row-name {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+.claude-project-row-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+.claude-project-row-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.75;
+    word-break: break-all;
+}
+.claude-project-row-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.claude-project-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.claude-project-btn:hover {
+    background: var(--bg-tertiary);
+}
+.claude-project-btn.create {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+.claude-project-btn.create:hover {
+    background: var(--accent-hover);
+}
+.claude-project-tag {
+    display: inline-block;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+    font-weight: normal;
+    vertical-align: middle;
+}
+.claude-project-tag.warn {
+    background: rgba(255, 180, 80, 0.18);
+    color: #d4a14e;
+}
+.claude-project-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 28px 12px;
+    font-size: 13px;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+}
+.claude-project-loading {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 28px;
+    font-size: 13px;
+}
+.claude-project-hint {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(79, 193, 255, 0.06);
+    border-left: 3px solid var(--info, var(--accent));
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+.claude-project-hint code {
+    background: var(--bg-tertiary);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--text-primary);
+}
+
+/* Errors tab — list of sb-error entries (newest first) */
+.claude-error-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.claude-error-entry {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-left: 3px solid #f44747;
+    border-radius: 4px;
+    padding: 8px 12px;
+}
+
+.claude-error-entry pre {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    cursor: text;
+}
+
+.claude-project-add-btn.claude-project-danger {
+    background: rgba(244, 71, 71, 0.15);
+    color: #f17878;
+    border: 1px solid #f44747;
+}
+
+.claude-project-add-btn.claude-project-danger:hover {
+    background: #f44747;
+    color: white;
+}
+
 /* Compact context primer */
 .claude-context-primer {
     background: rgba(79, 193, 255, 0.06);
@@ -1878,4 +2181,61 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 150px;
+}
+
+/* Read tool: file path shown inline in the header (replaces the redundant input pre) */
+.tool-read-path {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    margin-left: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.tool-read-meta {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Triangle toggle in tool-header (used by Read; default-collapsed) */
+.tool-toggle {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1;
+    user-select: none;
+    transition: background 0.15s, color 0.15s;
+}
+
+.tool-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--text-accent);
+}
+
+/* Collapsed state — hide the input/output bodies. !important wins over the
+   inline display:block that tool_result handler sets on .tool-output. */
+.claude-tool-block.is-collapsed .tool-input,
+.claude-tool-block.is-collapsed .tool-output {
+    display: none !important;
+}
+
+/* "你這什麼sb錯誤！" — distinctive red so it's clearly the panic button */
+.claude-sb-btn {
+    background: rgba(244, 71, 71, 0.12);
+    color: #f17878;
+    border-color: #f44747;
+}
+
+.claude-sb-btn:hover {
+    background: #f44747;
+    color: white;
+    border-color: #f44747;
 }
