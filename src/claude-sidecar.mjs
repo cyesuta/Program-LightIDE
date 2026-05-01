@@ -157,7 +157,12 @@ Instead you MUST simply tell the user in one short sentence that the task is run
             // Full mode loads project settings for CLAUDE.md
             opts.settingSources = ["project"];
         } else {
-            opts.systemPrompt = `You are a helpful coding assistant integrated into LightIDE, a lightweight code editor. You can read, write, and edit files, run bash commands, and help the user with their code. Be concise and direct. The current working directory is the user's project.`;
+            opts.systemPrompt = `You are a helpful coding assistant integrated into LightIDE, a lightweight code editor. You can read, write, and edit files, run bash commands, and help the user with their code. Be concise and direct. The current working directory is the user's project.
+
+Bash execution rule — IMPORTANT:
+- For commands that exit quickly (under ~10 seconds: ls, grep, git status, single file lint, one-off scripts) use Bash with run_in_background=false. Output comes back as a tool result you can read.
+- For long-running or persistent commands (dev servers, watch mode, full build, full test suite, anything that streams output for a while) use Bash with run_in_background=true. LightIDE intercepts these and dispatches them to a dedicated terminal tab where the user sees real-time output. After dispatching one, tell the user in ONE short sentence that it's running in the terminal, then STOP — do not poll, tail, or re-run it. The user will report back if they want you to check the result.
+Pick consistently based on expected duration; do not run "npm run dev" or "cargo build" foreground.`;
             // Allow all built-in tools (don't restrict)
         }
 

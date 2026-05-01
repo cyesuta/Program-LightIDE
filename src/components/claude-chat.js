@@ -1166,7 +1166,7 @@ class ClaudeChatComponent {
         const task = this.bgTasks.get(terminalId);
         if (!task) return;
 
-        // Update the card to "completed" state
+        // Update the card in the chat view to "completed" state
         const card = task.cardEl;
         if (card) {
             card.classList.remove('running');
@@ -1180,21 +1180,18 @@ class ClaudeChatComponent {
             }
         }
 
-        // Remove from tracking first (prevents re-entry)
+        // Remove from tracking
         this.bgTasks.delete(terminalId);
 
-        // Auto-switch back to Claude mode so user sees the notification
-        if (window.app?.switchMode) {
-            window.app.switchMode('claude');
-        }
-
-        // Auto-close the terminal tab after a short delay (release RAM).
-        // Delay lets the user briefly see the final output if they're looking.
-        if (task.tabId && typeof terminal !== 'undefined' && terminal.closeTab) {
-            setTimeout(() => {
-                terminal.closeTab(task.tabId);
-            }, 1500);
-        }
+        // Intentionally do NOT auto-switch the right panel back to claude mode,
+        // and do NOT auto-close the terminal tab. Let the user decide:
+        //   - they may still be reading the output (build summary, test results)
+        //   - and historically a false-positive completion (bash -i echoing the
+        //     sentinel literal back from the input line) would auto-kill a still-
+        //     running process. Keeping the tab open makes the failure mode obvious
+        //     instead of silent.
+        // The bg-task card in the chat view has a "🗑 關閉 tab" button if they
+        // want to clean up.
     }
 
     modelSupportsThinking(model) {

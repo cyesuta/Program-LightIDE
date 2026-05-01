@@ -452,8 +452,15 @@ class TerminalComponent {
         if (tab.isConnected) {
             const sentinel = `__LIGHTIDE_BG_DONE_${Date.now()}__`;
             tab._bgSentinel = sentinel;
-            // Run command, then echo sentinel (runs even if command fails)
-            const wrapped = `${command}; echo "${sentinel}"\n`;
+            // CRITICAL: hide the sentinel literal in a shell variable so it does NOT
+            // appear in the input that bash -i echoes back to the PTY. If we wrote
+            // `echo "__LIGHTIDE_BG_DONE_xxx__"` directly, bash's TTY input echo would
+            // emit the literal sentinel into the stream BEFORE the command even runs,
+            // tripping the completion detector immediately and killing the still-running
+            // process when handleBgTaskExit auto-closes the tab.
+            // The input stream contains `$_LDID` (literal); only the actual `echo`
+            // expansion at the end emits the sentinel value.
+            const wrapped = `_LDID='${sentinel}'; ${command}; echo "$_LDID"\n`;
             await tab.sendInput(wrapped);
         }
 

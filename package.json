@@ -1,6 +1,6 @@
 {
   "name": "lightide",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Lightweight code editor built with Rust + Tauri",
   "scripts": {
     "setup": "node scripts/setup.js",

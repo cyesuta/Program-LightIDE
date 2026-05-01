@@ -6,6 +6,39 @@
 
 ---
 
+## [0.2.1] - 2026-05-01
+
+### 🐛 修復：背景 Bash 派發三連 bug
+
+#### 症狀
+- 命令送進終端機後 tab 「閃一下」就顯示完成，實際命令完全沒跑（或跑沒幾秒就被殺）
+- Claude 對長命令時而選 `run_in_background=true` 時而選 `false`，行為不一致
+- 完成後右側面板自動切回 claude 頁，使用者看不到輸出
+
+#### 根因
+**核心 bug：sentinel 字串撞自己的 input echo。**
+`createBgTaskTab` 把 `${command}; echo "__LIGHTIDE_BG_DONE_xxx__"` 整段 input 進 `bash -i`。互動 shell 預設會把收到的 input **即時 echo 回 PTY**（TTY line editing 行為）。所以 stream 在第一個 chunk 就已經含有 sentinel 字面值——不是命令跑完，是 shell 在回顯使用者打進去的字。
+
+`terminal.js` 的 `_bgSentinelBuf.includes(sentinel)` 立刻成立 → 觸發 `bg-task-done` → `handleBgTaskExit`：
+1. card 標完成
+2. 自動切回 claude 頁（你看到的「閃一下」）
+3. **1.5 秒後自動 closeTab → Rust 端 Drop → PTY 殺 child process**
+
+於是還在啟動的 dev server 直接被砍。「實際沒完成」就是這樣來的。
+
+#### 修法
+1. **`terminal.js` createBgTaskTab**：sentinel 改包進 shell 變數送出：
+   ```bash
+   _LDID='__LIGHTIDE_BG_DONE_xxx__'; ${command}; echo "$_LDID"
+   ```
+   bash 回顯的 input 字面只含 `$_LDID`，sentinel 值僅在命令真的跑完、`echo` 展開時才出現在 stream 裡。一勞永逸消除假觸發。
+
+2. **`claude-chat.js` handleBgTaskExit**：移除「自動切回 claude」與「1.5 秒自動關 tab」。即使未來再有別的偽完成 trigger，也不會再悄悄殺掉 user 的 process。tab 由 user 自己決定何時關（chat view 的 bg-task card 內已有「🗑 關閉 tab」按鈕）。
+
+3. **`claude-sidecar.mjs` minimal 模式 system prompt**：補一段告訴 Claude bg 派發機制存在，並明示「dev server / watch / 完整 build / 完整 test 一律 `run_in_background=true`」，讓對長命令的選擇穩定下來。
+
+---
+
 ## [0.2.0] - 2026-05-01
 
 ### ✨ 新增功能
